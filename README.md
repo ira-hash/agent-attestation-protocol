@@ -46,7 +46,7 @@ v2.0 completely redesigns challenges to require **true AI understanding** while 
 
 | v1.0 (Old) | v2.0 (New) |
 |------------|------------|
-| `Calculate (30+5)*2` | `"30에 5를 더하고, 그 결과를 2로 나눈 값을 구하세요"` |
+| `Calculate (30+5)*2` | `"Add 30 and 5 together, then divide the result by 2"` |
 | Regex can parse numbers | LLM must understand natural language |
 | Simple code can solve | Requires language comprehension |
 
@@ -54,11 +54,11 @@ v2.0 completely redesigns challenges to require **true AI understanding** while 
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `nlp_extract` | Extract entities from sentences | "고양이와 개가 뛴다" → Extract animals |
-| `nlp_math` | Word problems | "30에서 5를 빼고 2로 나눠라" |
-| `nlp_transform` | String manipulation via NL | "Reverse and uppercase this" |
+| `nlp_extract` | Extract entities from sentences | "The cat and dog runs" → Extract animals |
+| `nlp_math` | Word problems | "Subtract 5 from 30, then divide by 2" |
+| `nlp_transform` | String manipulation via NL | "Reverse and uppercase this string" |
 | `nlp_logic` | Conditional reasoning | "If A > B then YES else NO" |
-| `nlp_count` | Count specific categories | "How many animals?" |
+| `nlp_count` | Count specific categories | "How many animals in this sentence?" |
 | `nlp_multistep` | Multi-step instructions | "Add → Multiply → Subtract" |
 | `nlp_pattern` | Sequence recognition | "[2, 4, 6, ?, ?]" |
 | `nlp_analysis` | Text analysis | "Find the longest word" |
@@ -66,11 +66,11 @@ v2.0 completely redesigns challenges to require **true AI understanding** while 
 ### Why This Works
 
 ```
-Challenge: "문장에서 동물만 추출해서 JSON으로 답해: 고양이와 개가 공원에서 뛴다"
+Challenge: "Extract only the animals from: The cat and dog plays in the park"
 
-Regular code: ❌ Can't identify "고양이" and "개" as animals
-LLM: ✅ Understands Korean, extracts animals naturally
-Verification: ✅ Server knows expected answer ["고양이", "개"]
+Regular code: ❌ Can't identify "cat" and "dog" as animals
+LLM: ✅ Understands English, extracts animals naturally
+Verification: ✅ Server knows expected answer ["cat", "dog"]
 ```
 
 ---
@@ -140,12 +140,12 @@ git clone https://github.com/ira-hash/agent-attestation-protocol.git
 │                                                             │
 │  ┌──────────┐    Challenge (Natural Language)    ┌────────┐│
 │  │  Server  │ ──────────────────────────────────▶│  Agent ││
-│  │(Verifier)│  "문장에서 동물만 추출해서 JSON으로" │ (LLM)  ││
+│  │(Verifier)│  "Extract animals from sentence"   │ (LLM)  ││
 │  └──────────┘                                    └────────┘│
 │       │                                              │      │
 │       │         JSON Answer + Signature (< 10s)     │      │
 │       │◀─────────────────────────────────────────────      │
-│       │         {"items": ["고양이", "개"]}                 │
+│       │         {"items": ["cat", "dog"]}                   │
 │       ▼                                                     │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │ ✅ Verify Signature (Proof of Identity)              │  │
@@ -209,15 +209,15 @@ agent-attestation-protocol/
 ### NLP Extract
 ```json
 {
-  "challenge": "다음 문장에서 동물 이름만 추출해서 JSON 배열로 답하세요.\n문장: \"호랑이와 토끼이 달린다\"\n응답 형식: {\"items\": [\"항목1\", \"항목2\"]}",
-  "expected": {"items": ["호랑이", "토끼"]}
+  "challenge": "Extract only the animals from the following sentence and respond as a JSON array.\nSentence: \"The tiger and rabbit runs in the park.\"\nResponse format: {\"items\": [\"item1\", \"item2\"]}",
+  "expected": {"items": ["tiger", "rabbit"]}
 }
 ```
 
 ### NLP Math
 ```json
 {
-  "challenge": "29에서 12를 빼고, 그 결과에 4를 곱한 값을 구하세요.\n응답 형식: {\"result\": 숫자}",
+  "challenge": "Subtract 12 from 29, then multiply the result by 4.\nResponse format: {\"result\": number}",
   "expected": {"result": 68}
 }
 ```
@@ -225,8 +225,24 @@ agent-attestation-protocol/
 ### NLP Logic
 ```json
 {
-  "challenge": "19와 88 중 더 큰 수가 42보다 크면 \"YES\", 아니면 \"NO\"라고 답하세요.\n응답 형식: {\"answer\": \"답\"}",
+  "challenge": "If the larger number between 19 and 88 is greater than 42, answer \"YES\". Otherwise, answer \"NO\".\nResponse format: {\"answer\": \"your answer\"}",
   "expected": {"answer": "YES"}
+}
+```
+
+### NLP Multistep
+```json
+{
+  "challenge": "Follow these instructions in order:\n1. Add all the numbers in [3, 6, 4, 1] together.\n2. Multiply the result by the smallest number.\n3. Subtract the largest number from that result.\nResponse format: {\"result\": final_value}",
+  "expected": {"result": 8}
+}
+```
+
+### NLP Pattern
+```json
+{
+  "challenge": "Find the pattern and provide the next 2 numbers: [3, 8, 13, 18, ?, ?]\nResponse format: {\"next\": [number1, number2]}",
+  "expected": {"next": [23, 28]}
 }
 ```
 

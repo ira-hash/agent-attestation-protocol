@@ -14,12 +14,12 @@ import { createHash } from 'node:crypto';
  * Word pools for dynamic challenge generation
  */
 const WORD_POOLS = {
-  animals: ['고양이', '강아지', '토끼', '호랑이', '사자', '코끼리', '기린', '펭귄', '독수리', '상어'],
-  fruits: ['사과', '바나나', '오렌지', '포도', '딸기', '수박', '참외', '복숭아', '키위', '망고'],
-  colors: ['빨강', '파랑', '노랑', '초록', '보라', '주황', '분홍', '검정', '하양', '갈색'],
-  countries: ['한국', '일본', '미국', '영국', '프랑스', '독일', '호주', '캐나다', '브라질', '인도'],
-  verbs: ['달린다', '먹는다', '잔다', '논다', '일한다', '공부한다', '여행한다', '요리한다'],
-  adjectives: ['큰', '작은', '빠른', '느린', '예쁜', '귀여운', '맛있는', '재미있는']
+  animals: ['cat', 'dog', 'rabbit', 'tiger', 'lion', 'elephant', 'giraffe', 'penguin', 'eagle', 'shark'],
+  fruits: ['apple', 'banana', 'orange', 'grape', 'strawberry', 'watermelon', 'peach', 'kiwi', 'mango', 'cherry'],
+  colors: ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'brown'],
+  countries: ['Korea', 'Japan', 'USA', 'UK', 'France', 'Germany', 'Australia', 'Canada', 'Brazil', 'India'],
+  verbs: ['runs', 'eats', 'sleeps', 'plays', 'works', 'studies', 'travels', 'cooks'],
+  adjectives: ['big', 'small', 'fast', 'slow', 'beautiful', 'cute', 'delicious', 'interesting']
 };
 
 /**
@@ -61,28 +61,22 @@ export const CHALLENGE_TYPES = {
       const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
       const pool = WORD_POOLS[category];
       const targets = seededSelect(pool, nonce, 2, 0);
-      const distractors = seededSelect(WORD_POOLS.verbs, nonce, 1, 4);
+      const verb = seededSelect(WORD_POOLS.verbs, nonce, 1, 4)[0];
       
-      const categoryName = {
-        animals: '동물',
-        fruits: '과일', 
-        colors: '색깔'
-      }[category];
-
-      const sentence = `${targets[0]}와 ${targets[1]}이 ${distractors[0]}`;
+      const sentence = `The ${targets[0]} and ${targets[1]} ${verb} in the park.`;
       
       return {
-        challenge_string: `다음 문장에서 ${categoryName} 이름만 추출해서 JSON 배열로 답하세요.
-문장: "${sentence}"
-응답 형식: {"items": ["항목1", "항목2"]}`,
+        challenge_string: `Extract only the ${category} from the following sentence and respond as a JSON array.
+Sentence: "${sentence}"
+Response format: {"items": ["item1", "item2"]}`,
         expected: targets.sort(),
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
-            const items = (obj.items || obj.animals || obj.fruits || obj.colors || []).sort();
-            return JSON.stringify(items) === JSON.stringify(targets.sort());
+            const items = (obj.items || obj.animals || obj.fruits || obj.colors || []).map(s => s.toLowerCase()).sort();
+            return JSON.stringify(items) === JSON.stringify(targets.map(s => s.toLowerCase()).sort());
           } catch { return false; }
         }
       };
@@ -100,25 +94,25 @@ export const CHALLENGE_TYPES = {
       
       const templates = [
         {
-          text: `${a}에서 ${b}를 빼고, 그 결과에 ${c}를 곱한 값을 구하세요.`,
+          text: `Subtract ${b} from ${a}, then multiply the result by ${c}.`,
           answer: (a - b) * c
         },
         {
-          text: `${a}와 ${b}를 더한 다음, ${c}로 나눈 값을 구하세요.`,
+          text: `Add ${a} and ${b} together, then divide by ${c}.`,
           answer: (a + b) / c
         },
         {
-          text: `${a}를 ${c}로 나누고, 거기에 ${b}를 더한 값을 구하세요.`,
+          text: `Divide ${a} by ${c}, then add ${b} to the result.`,
           answer: a / c + b
         }
       ];
       
       const template = templates[parseInt(nonce[6], 16) % templates.length];
-      const expected = Math.round(template.answer * 100) / 100; // 소수점 2자리
+      const expected = Math.round(template.answer * 100) / 100;
       
       return {
         challenge_string: `${template.text}
-응답 형식: {"result": 숫자}`,
+Response format: {"result": number}`,
         expected,
         validate: (solution) => {
           try {
@@ -145,26 +139,26 @@ export const CHALLENGE_TYPES = {
       
       switch (transformType) {
         case 0:
-          instruction = `문자열 "${input}"을 거꾸로 뒤집고, 모두 대문자로 바꾸세요.`;
+          instruction = `Reverse the string "${input}" and convert it to uppercase.`;
           expected = input.split('').reverse().join('').toUpperCase();
           break;
         case 1:
-          instruction = `문자열 "${input}"에서 숫자만 추출하고, 그 숫자들의 합을 구하세요.`;
+          instruction = `Extract only the digits from "${input}" and calculate their sum.`;
           expected = input.split('').filter(c => /\d/.test(c)).reduce((a, b) => a + parseInt(b), 0);
           break;
         case 2:
-          instruction = `문자열 "${input}"에서 알파벳만 추출하고, 알파벳 순서로 정렬하세요.`;
+          instruction = `Extract only the letters from "${input}" and sort them alphabetically.`;
           expected = input.split('').filter(c => /[a-zA-Z]/.test(c)).sort().join('');
           break;
         case 3:
-          instruction = `문자열 "${input}"의 각 문자 사이에 "-"를 넣으세요.`;
+          instruction = `Insert a hyphen "-" between each character of "${input}".`;
           expected = input.split('').join('-');
           break;
       }
       
       return {
         challenge_string: `${instruction}
-응답 형식: {"output": "결과값"}`,
+Response format: {"output": "result"}`,
         expected,
         validate: (solution) => {
           try {
@@ -190,15 +184,15 @@ export const CHALLENGE_TYPES = {
       
       const templates = [
         {
-          text: `${a}와 ${b} 중 더 큰 수가 ${threshold}보다 크면 "YES", 아니면 "NO"라고 답하세요.`,
+          text: `If the larger number between ${a} and ${b} is greater than ${threshold}, answer "YES". Otherwise, answer "NO".`,
           answer: Math.max(a, b) > threshold ? "YES" : "NO"
         },
         {
-          text: `${a}와 ${b}의 합이 ${threshold * 2}보다 작으면 "SMALL", 아니면 "LARGE"라고 답하세요.`,
+          text: `If the sum of ${a} and ${b} is less than ${threshold * 2}, answer "SMALL". Otherwise, answer "LARGE".`,
           answer: (a + b) < (threshold * 2) ? "SMALL" : "LARGE"
         },
         {
-          text: `${a}가 짝수이고 ${b}가 홀수이면 "MIXED", 아니면 "SAME"이라고 답하세요.`,
+          text: `If ${a} is even and ${b} is odd, answer "MIXED". Otherwise, answer "SAME".`,
           answer: (a % 2 === 0 && b % 2 === 1) ? "MIXED" : "SAME"
         }
       ];
@@ -207,7 +201,7 @@ export const CHALLENGE_TYPES = {
       
       return {
         challenge_string: `${template.text}
-응답 형식: {"answer": "답"}`,
+Response format: {"answer": "your answer"}`,
         expected: template.answer,
         validate: (solution) => {
           try {
@@ -234,22 +228,16 @@ export const CHALLENGE_TYPES = {
       const items1 = seededSelect(pool, nonce, count1, 0);
       const items2 = seededSelect(WORD_POOLS.countries, nonce, count2, 8);
       
-      const categoryName = {
-        animals: '동물',
-        fruits: '과일',
-        colors: '색깔'
-      }[category];
-      
-      // Create sentence with repetitions
+      // Create sentence with mixed items
       const allItems = [...items1, ...items2].sort(() => 
         parseInt(nonce.slice(10, 12), 16) % 2 - 0.5
       );
-      const sentence = allItems.join(', ') + '이 있습니다.';
+      const sentence = `I see ${allItems.join(', ')} in the picture.`;
       
       return {
-        challenge_string: `다음 문장에서 ${categoryName}의 개수를 세세요.
-문장: "${sentence}"
-응답 형식: {"count": 숫자}`,
+        challenge_string: `Count only the ${category} in the following sentence.
+Sentence: "${sentence}"
+Response format: {"count": number}`,
         expected: count1,
         validate: (solution) => {
           try {
@@ -285,11 +273,11 @@ export const CHALLENGE_TYPES = {
       const final = step2 - max;
       
       return {
-        challenge_string: `다음 지시를 순서대로 따르세요:
-1. 숫자 [${numbers.join(', ')}]를 모두 더하세요.
-2. 그 결과에 가장 작은 수를 곱하세요.
-3. 거기서 가장 큰 수를 빼세요.
-응답 형식: {"result": 최종값}`,
+        challenge_string: `Follow these instructions in order:
+1. Add all the numbers in [${numbers.join(', ')}] together.
+2. Multiply the result by the smallest number.
+3. Subtract the largest number from that result.
+Response format: {"result": final_value}`,
         expected: final,
         validate: (solution) => {
           try {
@@ -318,23 +306,23 @@ export const CHALLENGE_TYPES = {
         case 0: // Arithmetic
           sequence = [start, start + step, start + step * 2, start + step * 3];
           next2 = [start + step * 4, start + step * 5];
-          instruction = `다음 수열의 규칙을 파악하고, 다음 2개 숫자를 구하세요: [${sequence.join(', ')}, ?, ?]`;
+          instruction = `Find the pattern and provide the next 2 numbers: [${sequence.join(', ')}, ?, ?]`;
           break;
-        case 1: // Geometric-ish (doubling)
+        case 1: // Geometric (doubling)
           sequence = [start, start * 2, start * 4, start * 8];
           next2 = [start * 16, start * 32];
-          instruction = `다음 수열의 규칙을 파악하고, 다음 2개 숫자를 구하세요: [${sequence.join(', ')}, ?, ?]`;
+          instruction = `Find the pattern and provide the next 2 numbers: [${sequence.join(', ')}, ?, ?]`;
           break;
         case 2: // Fibonacci-like
           sequence = [start, step, start + step, step + (start + step)];
           next2 = [sequence[2] + sequence[3], sequence[3] + (sequence[2] + sequence[3])];
-          instruction = `다음 수열의 규칙을 파악하고, 다음 2개 숫자를 구하세요: [${sequence.join(', ')}, ?, ?]`;
+          instruction = `Find the pattern and provide the next 2 numbers: [${sequence.join(', ')}, ?, ?]`;
           break;
       }
       
       return {
         challenge_string: `${instruction}
-응답 형식: {"next": [숫자1, 숫자2]}`,
+Response format: {"next": [number1, number2]}`,
         expected: next2,
         validate: (solution) => {
           try {
@@ -360,33 +348,33 @@ export const CHALLENGE_TYPES = {
       const analysisType = parseInt(nonce[8], 16) % 3;
       
       let instruction, expected;
-      const sentence = words.join(', ');
+      const wordList = words.join(', ');
       
       switch (analysisType) {
         case 0: // Longest word
           expected = words.reduce((a, b) => a.length >= b.length ? a : b);
-          instruction = `다음 단어들 중 가장 긴 단어를 찾으세요: ${sentence}`;
+          instruction = `Find the longest word from the following list: ${wordList}`;
           break;
         case 1: // Shortest word
           expected = words.reduce((a, b) => a.length <= b.length ? a : b);
-          instruction = `다음 단어들 중 가장 짧은 단어를 찾으세요: ${sentence}`;
+          instruction = `Find the shortest word from the following list: ${wordList}`;
           break;
-        case 2: // First alphabetically (Korean)
+        case 2: // First alphabetically
           expected = [...words].sort()[0];
-          instruction = `다음 단어들을 가나다순으로 정렬했을 때 첫 번째 단어를 찾으세요: ${sentence}`;
+          instruction = `Find the word that comes first alphabetically from the following list: ${wordList}`;
           break;
       }
       
       return {
         challenge_string: `${instruction}
-응답 형식: {"answer": "단어"}`,
+Response format: {"answer": "word"}`,
         expected,
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
-            return obj.answer === expected;
+            return obj.answer?.toLowerCase() === expected.toLowerCase();
           } catch { return false; }
         }
       };
