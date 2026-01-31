@@ -1,6 +1,6 @@
 {
   "name": "aap-agent-client",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Client library for Agent Attestation Protocol - prove your AI agent identity",
   "main": "index.js",
   "types": "index.d.ts",
@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/ira-hash/agent-attestation-protocol#readme",
   "dependencies": {
-    "aap-agent-core": "^2.5.0"
+    "aap-agent-core": "^2.6.0"
   },
   "engines": {
     "node": ">=18.0.0"
