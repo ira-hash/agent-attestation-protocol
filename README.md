@@ -4,7 +4,7 @@
 [![updated](https://img.shields.io/badge/📅_updated-2026--01--31-brightgreen.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](./LICENSE)
 
-[![ClawdHub](https://img.shields.io/badge/ClawdHub-v2.0.0-purple.svg)](https://clawdhub.com/skills/aap-passport)
+[![ClawdHub](https://img.shields.io/badge/ClawdHub-v2.5.0-purple.svg)](https://clawdhub.com/skills/aap-passport)
 [![crypto](https://img.shields.io/badge/crypto-secp256k1-orange.svg)](https://en.bitcoin.it/wiki/Secp256k1)
 [![clawdbot](https://img.shields.io/badge/clawdbot-compatible-blueviolet.svg)](https://github.com/clawdbot/clawdbot)
 
