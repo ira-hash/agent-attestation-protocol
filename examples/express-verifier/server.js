@@ -7,11 +7,6 @@
  * Endpoints:
  * - POST /challenge: Generate a new challenge for an agent
  * - POST /verify: Verify an agent's proof response
- * 
- * Usage:
- *   npm install
- *   npm start
- *   # Server runs on http://localhost:3000
  */
 
 import express from 'express';
@@ -30,63 +25,119 @@ const CHALLENGE_EXPIRY_MS = 30000;
 const MAX_RESPONSE_TIME_MS = 1500;
 
 /**
+ * Dynamic Challenge Generator
+ * Creates varied challenges that require actual AI reasoning
+ */
+const CHALLENGE_TEMPLATES = [
+  {
+    type: 'poem',
+    generate: (nonce) => ({
+      challenge_string: `Write a short 2-line poem that includes the code "${nonce.slice(0, 8)}" naturally within the text.`,
+      validation: (solution, nonce) => solution.toLowerCase().includes(nonce.slice(0, 8).toLowerCase())
+    })
+  },
+  {
+    type: 'wordplay',
+    generate: (nonce) => ({
+      challenge_string: `Create a sentence where the first letter of each word spells out "${nonce.slice(0, 5).toUpperCase()}".`,
+      validation: (solution, nonce) => {
+        const words = solution.trim().split(/\s+/);
+        const firstLetters = words.map(w => w[0]?.toUpperCase()).join('');
+        return firstLetters.startsWith(nonce.slice(0, 5).toUpperCase());
+      }
+    })
+  },
+  {
+    type: 'math',
+    generate: (nonce) => {
+      const a = parseInt(nonce.slice(0, 2), 16) % 50 + 10;
+      const b = parseInt(nonce.slice(2, 4), 16) % 30 + 5;
+      return {
+        challenge_string: `Calculate ${a} + ${b} and respond with: "The answer is [result], nonce=${nonce.slice(0, 8)}"`,
+        validation: (solution, nonce) => {
+          const expected = a + b;
+          return solution.includes(String(expected)) && solution.toLowerCase().includes(nonce.slice(0, 8).toLowerCase());
+        }
+      };
+    }
+  },
+  {
+    type: 'reverse',
+    generate: (nonce) => ({
+      challenge_string: `Reverse the string "${nonce.slice(0, 8)}" and include both the original and reversed version in your response.`,
+      validation: (solution, nonce) => {
+        const original = nonce.slice(0, 8).toLowerCase();
+        const reversed = original.split('').reverse().join('');
+        return solution.toLowerCase().includes(original) && solution.toLowerCase().includes(reversed);
+      }
+    })
+  },
+  {
+    type: 'description',
+    generate: (nonce) => ({
+      challenge_string: `Describe what an AI agent is in one sentence, and end your response with the verification code: [${nonce.slice(0, 8)}]`,
+      validation: (solution, nonce) => solution.includes(`[${nonce.slice(0, 8)}]`)
+    })
+  }
+];
+
+/**
+ * Generate a random challenge
+ */
+function generateChallenge(nonce) {
+  const template = CHALLENGE_TEMPLATES[Math.floor(Math.random() * CHALLENGE_TEMPLATES.length)];
+  const generated = template.generate(nonce);
+  return {
+    type: template.type,
+    ...generated
+  };
+}
+
+/**
  * POST /challenge
  * Generate a new challenge for an agent to prove their identity
- * 
- * Response: {
- *   challenge_string: string,
- *   nonce: string,
- *   difficulty: number,
- *   timestamp: number,
- *   expiresAt: number
- * }
  */
 app.post('/challenge', (req, res) => {
   const nonce = randomBytes(16).toString('hex');
   const timestamp = Date.now();
   
+  const { type, challenge_string, validation } = generateChallenge(nonce);
+  
   const challenge = {
-    challenge_string: 'Prove you are an AI agent by responding to this challenge',
+    challenge_string,
     nonce,
+    type,
     difficulty: 1,
     timestamp,
     expiresAt: timestamp + CHALLENGE_EXPIRY_MS
   };
   
-  // Store challenge for later verification
+  // Store challenge with validation function
   challenges.set(nonce, {
     ...challenge,
+    validation,
     issuedAt: timestamp
   });
   
-  // Clean up expired challenges periodically
+  // Clean up expired challenges
   cleanupExpiredChallenges();
   
-  console.log(`[Challenge] Issued nonce: ${nonce.slice(0, 8)}...`);
+  console.log(`[Challenge] Type: ${type}, Nonce: ${nonce.slice(0, 8)}...`);
   
-  res.json(challenge);
+  // Don't send validation function to client
+  res.json({
+    challenge_string,
+    nonce,
+    type,
+    difficulty: challenge.difficulty,
+    timestamp,
+    expiresAt: challenge.expiresAt
+  });
 });
 
 /**
  * POST /verify
  * Verify an agent's proof response
- * 
- * Request body: {
- *   solution: string,
- *   signature: string,
- *   publicKey: string,
- *   publicId: string,
- *   nonce: string,
- *   timestamp: number,
- *   responseTimeMs: number
- * }
- * 
- * Response: {
- *   verified: boolean,
- *   role?: "AI_AGENT",
- *   checks?: object,
- *   error?: string
- * }
  */
 app.post('/verify', (req, res) => {
   const { 
@@ -99,15 +150,13 @@ app.post('/verify', (req, res) => {
     responseTimeMs 
   } = req.body;
   
-  const results = {
-    verified: false,
-    checks: {
-      challengeExists: false,
-      notExpired: false,
-      signatureValid: false,
-      solutionExists: false,
-      responseTimeValid: false
-    }
+  const checks = {
+    challengeExists: false,
+    notExpired: false,
+    solutionExists: false,
+    solutionValid: false,
+    responseTimeValid: false,
+    signatureValid: false
   };
   
   try {
@@ -116,42 +165,57 @@ app.post('/verify', (req, res) => {
     if (!originalChallenge) {
       return res.status(400).json({
         verified: false,
-        error: 'Challenge not found or already used'
+        error: 'Challenge not found or already used',
+        checks
       });
     }
-    results.checks.challengeExists = true;
+    checks.challengeExists = true;
     
     // Remove challenge (one-time use)
+    const validation = originalChallenge.validation;
     challenges.delete(nonce);
     
     // Check 2: Challenge not expired
     if (Date.now() > originalChallenge.expiresAt) {
       return res.status(400).json({
         verified: false,
-        error: 'Challenge expired'
+        error: 'Challenge expired',
+        checks
       });
     }
-    results.checks.notExpired = true;
+    checks.notExpired = true;
     
-    // Check 3: Solution exists (Proof of Intelligence)
+    // Check 3: Solution exists (basic)
     if (!solution || solution.trim().length === 0) {
       return res.status(400).json({
         verified: false,
-        error: 'Missing solution (Proof of Intelligence failed)'
+        error: 'Missing solution',
+        checks
       });
     }
-    results.checks.solutionExists = true;
+    checks.solutionExists = true;
     
-    // Check 4: Response time (Proof of Liveness)
+    // Check 4: Solution is valid (Proof of Intelligence)
+    if (!validation(solution, nonce)) {
+      return res.status(400).json({
+        verified: false,
+        error: 'Solution does not meet challenge requirements (Proof of Intelligence failed)',
+        checks
+      });
+    }
+    checks.solutionValid = true;
+    
+    // Check 5: Response time (Proof of Liveness)
     if (responseTimeMs > MAX_RESPONSE_TIME_MS) {
       return res.status(400).json({
         verified: false,
-        error: `Response too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms (Proof of Liveness failed)`
+        error: `Response too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms (Proof of Liveness failed)`,
+        checks
       });
     }
-    results.checks.responseTimeValid = true;
+    checks.responseTimeValid = true;
     
-    // Check 5: Signature valid (Proof of Identity)
+    // Check 6: Signature valid (Proof of Identity)
     const proofData = {
       nonce,
       solution,
@@ -164,38 +228,35 @@ app.post('/verify', (req, res) => {
     if (!isSignatureValid) {
       return res.status(400).json({
         verified: false,
-        error: 'Invalid signature (Proof of Identity failed)'
+        error: 'Invalid signature (Proof of Identity failed)',
+        checks
       });
     }
-    results.checks.signatureValid = true;
+    checks.signatureValid = true;
     
     // All checks passed!
-    results.verified = true;
-    
     console.log(`[Verify] ✅ Agent verified! Public ID: ${publicId?.slice(0, 8)}...`);
     
     res.json({
       verified: true,
       role: 'AI_AGENT',
       publicId,
-      checks: results.checks
+      challengeType: originalChallenge.type,
+      checks
     });
     
   } catch (error) {
     console.error('[Verify] Error:', error.message);
     res.status(500).json({
       verified: false,
-      error: `Verification error: ${error.message}`
+      error: `Verification error: ${error.message}`,
+      checks
     });
   }
 });
 
 /**
  * Verify a signature using secp256k1
- * @param {string} data - Original data that was signed
- * @param {string} signature - Base64-encoded signature
- * @param {string} publicKey - PEM-encoded public key
- * @returns {boolean} True if signature is valid
  */
 function verifySignature(data, signature, publicKey) {
   try {
@@ -227,7 +288,8 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     protocol: 'AAP',
     version: '1.0.0',
-    activeChallenges: challenges.size
+    activeChallenges: challenges.size,
+    challengeTypes: CHALLENGE_TEMPLATES.map(t => t.type)
   });
 });
 
@@ -236,12 +298,14 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║           AAP Verifier Server - Example                   ║
+║           AAP Verifier Server v1.0.0                      ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Endpoints:                                               ║
 ║    POST /challenge  - Get a new challenge                 ║
 ║    POST /verify     - Verify agent proof                  ║
 ║    GET  /health     - Health check                        ║
+╠═══════════════════════════════════════════════════════════╣
+║  Challenge Types: poem, wordplay, math, reverse, desc     ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Server running on http://localhost:${PORT}                    ║
 ╚═══════════════════════════════════════════════════════════╝
