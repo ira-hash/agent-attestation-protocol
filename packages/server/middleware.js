@@ -5,22 +5,35 @@
  */
 
 import { verify, generateNonce, createProofData } from '@aap/core';
-import { generate as generateChallenge, getTypes, validate as validateSolution, MAX_RESPONSE_TIME_MS, CHALLENGE_EXPIRY_MS } from './challenges.js';
+import { 
+  generate as generateChallenge, 
+  generateBatch,
+  validateBatch,
+  getTypes, 
+  validate as validateSolution, 
+  BATCH_SIZE,
+  MAX_RESPONSE_TIME_MS, 
+  CHALLENGE_EXPIRY_MS 
+} from './challenges.js';
 
 /**
  * Create AAP verification middleware/router
  * 
  * @param {Object} [options]
- * @param {number} [options.challengeExpiryMs=30000] - Challenge expiration time
- * @param {number} [options.maxResponseTimeMs=1500] - Max response time for liveness
+ * @param {number} [options.challengeExpiryMs=60000] - Challenge expiration time
+ * @param {number} [options.maxResponseTimeMs=12000] - Max response time for batch
+ * @param {number} [options.batchSize=3] - Number of challenges per batch
+ * @param {number} [options.minPassCount] - Minimum challenges to pass (default: all)
  * @param {Function} [options.onVerified] - Callback when agent is verified
  * @param {Function} [options.onFailed] - Callback when verification fails
  * @returns {Function} Express router
  */
 export function aapMiddleware(options = {}) {
   const {
-    challengeExpiryMs = CHALLENGE_EXPIRY_MS,       // 60 seconds
-    maxResponseTimeMs = MAX_RESPONSE_TIME_MS,     // 10 seconds (LLM needs time)
+    challengeExpiryMs = CHALLENGE_EXPIRY_MS,
+    maxResponseTimeMs = MAX_RESPONSE_TIME_MS,
+    batchSize = BATCH_SIZE,
+    minPassCount = null,  // null = all must pass
     onVerified,
     onFailed
   } = options;
@@ -47,16 +60,184 @@ export function aapMiddleware(options = {}) {
       res.json({
         status: 'ok',
         protocol: 'AAP',
-        version: '1.0.0',
+        version: '2.0.0',
+        mode: 'batch',
+        batchSize,
+        maxResponseTimeMs,
         challengeTypes: getTypes(),
         activeChallenges: challenges.size
       });
     });
 
     /**
-     * POST /challenge - Request a new challenge
+     * POST /challenge - Request a batch of challenges
      */
     router.post('/challenge', (req, res) => {
+      cleanup();
+
+      const nonce = generateNonce();
+      const timestamp = Date.now();
+      const { challenges: batchChallenges, validators, expected } = generateBatch(nonce, batchSize);
+
+      const challengeData = {
+        nonce,
+        challenges: batchChallenges,
+        batchSize,
+        timestamp,
+        expiresAt: timestamp + challengeExpiryMs,
+        maxResponseTimeMs
+      };
+
+      // Store with validators (not sent to client)
+      challenges.set(nonce, { 
+        ...challengeData, 
+        validators,
+        expected  // For debugging
+      });
+
+      // Send without validators
+      res.json({
+        nonce,
+        challenges: batchChallenges,
+        batchSize,
+        timestamp,
+        expiresAt: challengeData.expiresAt,
+        maxResponseTimeMs
+      });
+    });
+
+    /**
+     * POST /verify - Verify agent's batch solutions
+     */
+    router.post('/verify', (req, res) => {
+      const {
+        solutions,
+        signature,
+        publicKey,
+        publicId,
+        nonce,
+        timestamp,
+        responseTimeMs
+      } = req.body;
+
+      const checks = {
+        challengeExists: false,
+        notExpired: false,
+        solutionsExist: false,
+        solutionsValid: false,
+        responseTimeValid: false,
+        signatureValid: false
+      };
+
+      try {
+        // Check 1: Challenge exists
+        const challenge = challenges.get(nonce);
+        if (!challenge) {
+          if (onFailed) onFailed({ error: 'Challenge not found', checks }, req);
+          return res.status(400).json({
+            verified: false,
+            error: 'Challenge not found or already used',
+            checks
+          });
+        }
+        checks.challengeExists = true;
+
+        // Remove challenge (one-time use)
+        const { validators, batchSize: size } = challenge;
+        challenges.delete(nonce);
+
+        // Check 2: Not expired
+        if (Date.now() > challenge.expiresAt) {
+          if (onFailed) onFailed({ error: 'Challenge expired', checks }, req);
+          return res.status(400).json({
+            verified: false,
+            error: 'Challenge expired',
+            checks
+          });
+        }
+        checks.notExpired = true;
+
+        // Check 3: Solutions exist
+        if (!solutions || !Array.isArray(solutions) || solutions.length !== size) {
+          if (onFailed) onFailed({ error: 'Invalid solutions array', checks }, req);
+          return res.status(400).json({
+            verified: false,
+            error: `Expected ${size} solutions, got ${solutions?.length || 0}`,
+            checks
+          });
+        }
+        checks.solutionsExist = true;
+
+        // Check 4: Validate all solutions (Proof of Intelligence)
+        const batchResult = validateBatch(validators, solutions);
+        const requiredPass = minPassCount || size;
+        
+        if (batchResult.passed < requiredPass) {
+          if (onFailed) onFailed({ error: 'Solutions validation failed', checks, batchResult }, req);
+          return res.status(400).json({
+            verified: false,
+            error: `Proof of Intelligence failed: ${batchResult.passed}/${size} correct (need ${requiredPass})`,
+            checks,
+            batchResult
+          });
+        }
+        checks.solutionsValid = true;
+
+        // Check 5: Response time (Proof of Liveness)
+        if (responseTimeMs > maxResponseTimeMs) {
+          if (onFailed) onFailed({ error: 'Response too slow', checks }, req);
+          return res.status(400).json({
+            verified: false,
+            error: `Response too slow: ${responseTimeMs}ms > ${maxResponseTimeMs}ms (Proof of Liveness failed)`,
+            checks
+          });
+        }
+        checks.responseTimeValid = true;
+
+        // Check 6: Signature (Proof of Identity)
+        // Sign over solutions array
+        const solutionsString = JSON.stringify(solutions);
+        const proofData = createProofData({ nonce, solution: solutionsString, publicId, timestamp });
+        if (!verify(proofData, signature, publicKey)) {
+          if (onFailed) onFailed({ error: 'Invalid signature', checks }, req);
+          return res.status(400).json({
+            verified: false,
+            error: 'Invalid signature (Proof of Identity failed)',
+            checks
+          });
+        }
+        checks.signatureValid = true;
+
+        // All checks passed
+        const result = {
+          verified: true,
+          role: 'AI_AGENT',
+          publicId,
+          batchResult,
+          responseTimeMs,
+          checks
+        };
+
+        if (onVerified) onVerified(result, req);
+
+        res.json(result);
+
+      } catch (error) {
+        if (onFailed) onFailed({ error: error.message, checks }, req);
+        res.status(500).json({
+          verified: false,
+          error: `Verification error: ${error.message}`,
+          checks
+        });
+      }
+    });
+
+    // ============== Legacy single-challenge endpoints ==============
+    
+    /**
+     * POST /challenge/single - Request a single challenge (legacy)
+     */
+    router.post('/challenge/single', (req, res) => {
       cleanup();
 
       const nonce = generateNonce();
@@ -69,27 +250,28 @@ export function aapMiddleware(options = {}) {
         type,
         difficulty: 1,
         timestamp,
-        expiresAt: timestamp + challengeExpiryMs
+        expiresAt: timestamp + challengeExpiryMs,
+        mode: 'single'
       };
 
-      // Store with validation function
       challenges.set(nonce, { ...challenge, validate });
 
-      // Send without validate function
       res.json({
         challenge_string,
         nonce,
         type,
         difficulty: 1,
         timestamp,
-        expiresAt: challenge.expiresAt
+        expiresAt: challenge.expiresAt,
+        mode: 'single',
+        maxResponseTimeMs: 10000  // 10s for single
       });
     });
 
     /**
-     * POST /verify - Verify an agent's proof
+     * POST /verify/single - Verify single challenge (legacy)
      */
-    router.post('/verify', (req, res) => {
+    router.post('/verify/single', (req, res) => {
       const {
         solution,
         signature,
@@ -110,98 +292,55 @@ export function aapMiddleware(options = {}) {
       };
 
       try {
-        // Check 1: Challenge exists
         const challenge = challenges.get(nonce);
-        if (!challenge) {
-          if (onFailed) onFailed({ error: 'Challenge not found', checks }, req);
+        if (!challenge || challenge.mode !== 'single') {
           return res.status(400).json({
             verified: false,
-            error: 'Challenge not found or already used',
+            error: 'Single challenge not found',
             checks
           });
         }
         checks.challengeExists = true;
 
-        // Remove challenge (one-time use)
         const { validate, type: challengeType } = challenge;
         challenges.delete(nonce);
 
-        // Check 2: Not expired
         if (Date.now() > challenge.expiresAt) {
-          if (onFailed) onFailed({ error: 'Challenge expired', checks }, req);
-          return res.status(400).json({
-            verified: false,
-            error: 'Challenge expired',
-            checks
-          });
+          return res.status(400).json({ verified: false, error: 'Challenge expired', checks });
         }
         checks.notExpired = true;
 
-        // Check 3: Solution exists
-        if (!solution || solution.trim().length === 0) {
-          if (onFailed) onFailed({ error: 'Missing solution', checks }, req);
-          return res.status(400).json({
-            verified: false,
-            error: 'Missing solution',
-            checks
-          });
+        if (!solution) {
+          return res.status(400).json({ verified: false, error: 'Missing solution', checks });
         }
         checks.solutionExists = true;
 
-        // Check 4: Solution valid (Proof of Intelligence)
         if (!validate(solution)) {
-          if (onFailed) onFailed({ error: 'Invalid solution', checks }, req);
-          return res.status(400).json({
-            verified: false,
-            error: 'Solution does not meet challenge requirements (Proof of Intelligence failed)',
-            checks
-          });
+          return res.status(400).json({ verified: false, error: 'Invalid solution', checks });
         }
         checks.solutionValid = true;
 
-        // Check 5: Response time (Proof of Liveness)
-        if (responseTimeMs > maxResponseTimeMs) {
-          if (onFailed) onFailed({ error: 'Response too slow', checks }, req);
-          return res.status(400).json({
-            verified: false,
-            error: `Response too slow: ${responseTimeMs}ms > ${maxResponseTimeMs}ms (Proof of Liveness failed)`,
-            checks
-          });
+        if (responseTimeMs > 10000) {
+          return res.status(400).json({ verified: false, error: 'Too slow', checks });
         }
         checks.responseTimeValid = true;
 
-        // Check 6: Signature (Proof of Identity)
         const proofData = createProofData({ nonce, solution, publicId, timestamp });
         if (!verify(proofData, signature, publicKey)) {
-          if (onFailed) onFailed({ error: 'Invalid signature', checks }, req);
-          return res.status(400).json({
-            verified: false,
-            error: 'Invalid signature (Proof of Identity failed)',
-            checks
-          });
+          return res.status(400).json({ verified: false, error: 'Invalid signature', checks });
         }
         checks.signatureValid = true;
 
-        // All checks passed
-        const result = {
+        res.json({
           verified: true,
           role: 'AI_AGENT',
           publicId,
           challengeType,
           checks
-        };
-
-        if (onVerified) onVerified(result, req);
-
-        res.json(result);
+        });
 
       } catch (error) {
-        if (onFailed) onFailed({ error: error.message, checks }, req);
-        res.status(500).json({
-          verified: false,
-          error: `Verification error: ${error.message}`,
-          checks
-        });
+        res.status(500).json({ verified: false, error: error.message, checks });
       }
     });
 
@@ -223,7 +362,6 @@ export function aapMiddleware(options = {}) {
  * app.use('/aap/v1', createRouter());
  */
 export function createRouter(options = {}) {
-  // Dynamic import to avoid requiring express as hard dependency
   const express = require('express');
   const router = express.Router();
   router.use(express.json());

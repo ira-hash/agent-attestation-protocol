@@ -385,9 +385,10 @@ Response format: {"answer": "word"}`,
 // ============== Protocol Constants ==============
 
 /**
- * Updated timing for LLM-based challenges
+ * Batch challenge settings
  */
-export const MAX_RESPONSE_TIME_MS = 10000; // 10 seconds (LLM needs time)
+export const BATCH_SIZE = 3;              // Number of challenges per batch
+export const MAX_RESPONSE_TIME_MS = 12000; // 12 seconds for batch (avg 4s per challenge)
 export const CHALLENGE_EXPIRY_MS = 60000;  // 60 seconds
 
 /**
@@ -399,7 +400,7 @@ export function getTypes() {
 }
 
 /**
- * Generate a random challenge
+ * Generate a single random challenge
  * @param {string} nonce - The nonce to incorporate
  * @param {string} [type] - Specific type (random if not specified)
  * @returns {Object} { type, challenge_string, validate, expected }
@@ -422,7 +423,80 @@ export function generate(nonce, type) {
 }
 
 /**
- * Validate a solution against a challenge
+ * Generate a batch of challenges
+ * @param {string} nonce - Base nonce
+ * @param {number} [count=BATCH_SIZE] - Number of challenges
+ * @returns {Object} { challenges: [...], validators: [...] }
+ */
+export function generateBatch(nonce, count = BATCH_SIZE) {
+  const types = getTypes();
+  const usedTypes = new Set();
+  const challenges = [];
+  const validators = [];
+  const expected = [];
+  
+  for (let i = 0; i < count; i++) {
+    // Use different nonce offset for each challenge
+    const offsetNonce = nonce.slice(i * 2) + nonce.slice(0, i * 2);
+    
+    // Select different type for each challenge
+    let selectedType;
+    do {
+      const seed = parseInt(offsetNonce.slice(0, 4), 16);
+      selectedType = types[(seed + i * 3) % types.length];
+    } while (usedTypes.has(selectedType) && usedTypes.size < types.length);
+    usedTypes.add(selectedType);
+    
+    const generator = CHALLENGE_TYPES[selectedType];
+    const result = generator.generate(offsetNonce);
+    
+    challenges.push({
+      id: i,
+      type: selectedType,
+      challenge_string: result.challenge_string
+    });
+    
+    validators.push(result.validate);
+    expected.push(result.expected);
+  }
+  
+  return {
+    challenges,
+    validators,  // Keep on server, don't send to client
+    expected     // For debugging
+  };
+}
+
+/**
+ * Validate batch solutions
+ * @param {Array} validators - Validator functions from generateBatch
+ * @param {Array} solutions - Array of solutions from client
+ * @returns {Object} { passed, total, results: [{id, valid}] }
+ */
+export function validateBatch(validators, solutions) {
+  const results = [];
+  let passed = 0;
+  
+  for (let i = 0; i < validators.length; i++) {
+    const solution = solutions[i];
+    const valid = solution && validators[i](
+      typeof solution === 'string' ? solution : JSON.stringify(solution)
+    );
+    
+    results.push({ id: i, valid });
+    if (valid) passed++;
+  }
+  
+  return {
+    passed,
+    total: validators.length,
+    allPassed: passed === validators.length,
+    results
+  };
+}
+
+/**
+ * Validate a single solution against a challenge
  * @param {string} type - Challenge type
  * @param {string} nonce - Original nonce
  * @param {string} solution - Agent's solution
@@ -440,9 +514,12 @@ export function validate(type, nonce, solution) {
 
 export default {
   CHALLENGE_TYPES,
+  BATCH_SIZE,
   MAX_RESPONSE_TIME_MS,
   CHALLENGE_EXPIRY_MS,
   getTypes,
   generate,
+  generateBatch,
+  validateBatch,
   validate
 };
