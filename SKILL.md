@@ -1,6 +1,6 @@
 ---
 name: aap
-version: 3.1.0
+version: 3.2.0
 description: Agent Attestation Protocol - The Reverse Turing Test. Verify AI agents, block humans.
 homepage: https://github.com/ira-hash/agent-attestation-protocol
 metadata: {"clawdbot":{"emoji":"🛂","category":"security","npm":["aap-agent-server","aap-agent-client"]}}
@@ -12,18 +12,16 @@ metadata: {"clawdbot":{"emoji":"🛂","category":"security","npm":["aap-agent-se
 
 ## What It Does
 
-AAP verifies that a client is an AI agent by issuing challenges that:
-- Are trivial for LLMs to solve
-- Are impossible for humans to complete in time (6 seconds for 7 challenges)
+AAP verifies that a client is an AI agent by:
+- Issuing challenges trivial for LLMs, impossible for humans in time
+- Requiring cryptographic signature (secp256k1) for identity proof
+- 7 challenges in 6 seconds with mandatory signing
 
 ## Installation
 
 ```bash
-# Server (to verify agents)
-npm install aap-agent-server
-
-# Client (to prove you're an agent)
-npm install aap-agent-client
+npm install aap-agent-server  # Server
+npm install aap-agent-client  # Client
 ```
 
 ## Server Usage
@@ -36,6 +34,7 @@ const server = createServer();
 const aap = createAAPWebSocket({
   server,
   path: '/aap',
+  requireSignature: true,  // v3.2 default
   onVerified: (result) => console.log('Verified:', result.publicId)
 });
 
@@ -45,43 +44,33 @@ server.listen(3000);
 ## Client Usage
 
 ```javascript
-import { AAPClient, createSolver } from 'aap-agent-client';
+import { AAPClient, generateIdentity, createSolver } from 'aap-agent-client';
 
+// Identity auto-generated (secp256k1 key pair)
 const client = new AAPClient({
-  serverUrl: 'ws://localhost:3000/aap',
-  publicId: 'my-agent'
-});
-
-// With LLM solver
-const solver = createSolver(async (prompt) => {
-  return await llm.complete(prompt);
+  serverUrl: 'ws://localhost:3000/aap'
 });
 
 const result = await client.verify(solver);
-if (result.verified) {
-  console.log('Access granted:', result.sessionToken);
-}
+// Signature automatically included
 ```
 
-## Protocol Flow (WebSocket)
+## Protocol Flow (WebSocket v3.2)
 
 ```
-← handshake
-→ ready (publicId)
+← handshake (requireSignature: true)
+→ ready (publicKey)
 ← challenges (7 challenges)
-→ answers (7 answers)
+→ answers + signature + timestamp
 ← result (verified/failed + sessionToken)
 ```
 
-## Challenge Types
+## Signature Format
 
-- Math operations
-- Logic comparisons
-- Animal counting
-- Pattern sequences
-- String reversal
-- Color extraction
-- Longest word finding
+Proof data signed with secp256k1:
+```javascript
+JSON.stringify({ nonce, answers, publicId, timestamp })
+```
 
 ## Configuration
 
@@ -89,17 +78,18 @@ if (result.verified) {
 |--------|---------|-------------|
 | `challengeCount` | 7 | Number of challenges |
 | `totalTimeMs` | 6000 | Time limit (ms) |
-| `path` | `/aap` | WebSocket path |
+| `requireSignature` | true | Mandate cryptographic proof |
 
 ## Security
 
+- Cryptographic identity (secp256k1)
+- Signature required = no anonymous access
 - 7 challenges in 6 seconds = impossible for humans
-- Salt injection prevents answer caching
-- WebSocket ensures accurate timing
-- Session tokens expire in 1 hour
+- Non-repudiation: all actions traceable
 
 ## Links
 
 - [GitHub](https://github.com/ira-hash/agent-attestation-protocol)
 - [npm: aap-agent-server](https://www.npmjs.com/package/aap-agent-server)
 - [npm: aap-agent-client](https://www.npmjs.com/package/aap-agent-client)
+- [Live Demo: ClosedClaw](https://focused-blessing-production-d764.up.railway.app/)
