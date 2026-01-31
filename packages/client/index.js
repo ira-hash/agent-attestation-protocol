@@ -1,214 +1,146 @@
 /**
- * @aap/client
+ * @aap/client v3.0.0
  * 
- * Client library for Agent Attestation Protocol.
- * Enables AI agents to prove their identity to verification servers.
+ * WebSocket client for Agent Attestation Protocol.
+ * Connect, solve sequential challenges, prove your intelligence.
  */
 
-import { Prover } from './prover.js';
-import { Identity } from 'aap-agent-core';
+import WebSocket from 'ws';
 
-// Fetch with timeout helper
-async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
+export const PROTOCOL_VERSION = '3.0.0';
+
+/**
+ * AAP WebSocket Client
+ */
+export class AAPClient {
+  constructor(options = {}) {
+    this.serverUrl = options.serverUrl || 'ws://localhost:3000/aap';
+    this.publicId = options.publicId || null;
+    this.solver = options.solver || null;
+  }
+
+  /**
+   * Connect and verify
+   * @param {Function} [solver] - async (challengeString, challengeId) => answerObject
+   * @returns {Promise<Object>} Verification result
+   */
+  async verify(solver) {
+    const solve = solver || this.solver;
+    
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(this.serverUrl);
+      let result = null;
+
+      ws.on('open', () => {
+        // Wait for handshake
+      });
+
+      ws.on('message', async (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+
+          switch (msg.type) {
+            case 'handshake':
+              // Send ready
+              ws.send(JSON.stringify({
+                type: 'ready',
+                publicId: this.publicId
+              }));
+              break;
+
+            case 'challenge':
+              if (!solve) {
+                // No solver - send empty answer (will fail)
+                ws.send(JSON.stringify({ type: 'answer', answer: {} }));
+                break;
+              }
+
+              try {
+                const answer = await solve(msg.challenge, msg.id);
+                ws.send(JSON.stringify({ type: 'answer', answer }));
+              } catch (e) {
+                ws.send(JSON.stringify({ type: 'answer', answer: { error: e.message } }));
+              }
+              break;
+
+            case 'ack':
+              // Challenge acknowledged, waiting for next
+              break;
+
+            case 'timeout':
+              // Too slow
+              break;
+
+            case 'result':
+              result = msg;
+              break;
+
+            case 'error':
+              reject(new Error(msg.message || 'Unknown error'));
+              ws.close();
+              break;
+          }
+        } catch (e) {
+          reject(e);
+          ws.close();
+        }
+      });
+
+      ws.on('close', () => {
+        if (result) {
+          resolve(result);
+        } else {
+          reject(new Error('Connection closed without result'));
+        }
+      });
+
+      ws.on('error', (err) => {
+        reject(err);
+      });
     });
-    return response;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 /**
- * AAP Client - High-level interface for verification
+ * Create a solver function from an LLM callback
+ * @param {Function} llm - async (prompt) => responseString
+ * @returns {Function} Solver function for verify()
  */
-export class AAPClient {
-  /**
-   * @param {Object} [options]
-   * @param {string} [options.serverUrl] - Default verification server URL
-   * @param {string} [options.storagePath] - Identity storage path
-   * @param {Function} [options.llmCallback] - Default LLM callback for solutions
-   */
-  constructor(options = {}) {
-    this.serverUrl = options.serverUrl?.replace(/\/$/, '');
-    this.llmCallback = options.llmCallback;
-    this.prover = new Prover({ storagePath: options.storagePath });
-  }
+export function createSolver(llm) {
+  return async (challengeString, challengeId) => {
+    const prompt = `Solve this challenge. Respond with ONLY the JSON object, no explanation:
 
-  /**
-   * Get agent's public identity
-   * @returns {Object}
-   */
-  getIdentity() {
-    return this.prover.getIdentity();
-  }
+${challengeString}`;
 
-  /**
-   * Perform full verification against a server
-   * 
-   * @param {string} [serverUrl] - Override default server URL
-   * @param {Function|string} [solutionOrCallback] - Solution or LLM callback
-   * @returns {Promise<Object>} Verification result
-   */
-  async verify(serverUrl, solutionOrCallback) {
-    const baseUrl = (serverUrl || this.serverUrl)?.replace(/\/$/, '');
-    if (!baseUrl) {
-      throw new Error('Server URL is required');
+    const response = await llm(prompt);
+    
+    // Extract JSON from response
+    const match = response.match(/\{[\s\S]*?\}/);
+    if (!match) {
+      throw new Error('No JSON found in response');
     }
-
-    const callback = solutionOrCallback || this.llmCallback;
-
-    // Step 1: Request challenge (with timeout)
-    let challengeRes;
-    try {
-      challengeRes = await fetchWithTimeout(`${baseUrl}/challenge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      }, 10000);
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Challenge request timed out');
-      }
-      throw error;
-    }
-
-    if (!challengeRes.ok) {
-      throw new Error(`Failed to get challenge: ${challengeRes.status}`);
-    }
-
-    const challenge = await challengeRes.json();
-
-    // Step 2: Generate proof
-    const proof = await this.prover.generateProof(challenge, callback);
-
-    // Step 3: Submit proof (with timeout)
-    let verifyRes;
-    try {
-      verifyRes = await fetchWithTimeout(`${baseUrl}/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(proof)
-      }, 15000);
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Verification request timed out');
-      }
-      throw error;
-    }
-
-    const result = await verifyRes.json();
-
-    return {
-      ...result,
-      challenge,
-      proof: {
-        solution: proof.solution,
-        responseTimeMs: proof.responseTimeMs,
-        publicId: proof.publicId
-      }
-    };
-  }
-
-  /**
-   * Check server health
-   * @param {string} [serverUrl] - Override default server URL
-   * @returns {Promise<Object>}
-   */
-  async checkHealth(serverUrl) {
-    const baseUrl = (serverUrl || this.serverUrl)?.replace(/\/$/, '');
-    if (!baseUrl) {
-      throw new Error('Server URL is required');
-    }
-
-    try {
-      const res = await fetch(`${baseUrl}/health`);
-      if (!res.ok) {
-        return { healthy: false, error: `HTTP ${res.status}` };
-      }
-      return { healthy: true, ...(await res.json()) };
-    } catch (error) {
-      return { healthy: false, error: error.message };
-    }
-  }
-
-  /**
-   * Get a challenge without verifying (for manual flow)
-   * @param {string} [serverUrl] - Override default server URL
-   * @returns {Promise<Object>}
-   */
-  async getChallenge(serverUrl) {
-    const baseUrl = (serverUrl || this.serverUrl)?.replace(/\/$/, '');
-    if (!baseUrl) {
-      throw new Error('Server URL is required');
-    }
-
-    const res = await fetch(`${baseUrl}/challenge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-
-    if (!res.ok) {
-      throw new Error(`Failed to get challenge: ${res.status}`);
-    }
-
-    return res.json();
-  }
-
-  /**
-   * Generate a proof for a challenge (for manual flow)
-   * @param {Object} challenge - Challenge from getChallenge()
-   * @param {Function|string} [solutionOrCallback] - Solution or callback
-   * @returns {Promise<Object>}
-   */
-  async generateProof(challenge, solutionOrCallback) {
-    return this.prover.generateProof(challenge, solutionOrCallback || this.llmCallback);
-  }
-
-  /**
-   * Submit a proof for verification (for manual flow)
-   * @param {string} serverUrl - Server URL
-   * @param {Object} proof - Proof from generateProof()
-   * @returns {Promise<Object>}
-   */
-  async submitProof(serverUrl, proof) {
-    const baseUrl = (serverUrl || this.serverUrl)?.replace(/\/$/, '');
-    if (!baseUrl) {
-      throw new Error('Server URL is required');
-    }
-
-    const res = await fetch(`${baseUrl}/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(proof)
-    });
-
-    return res.json();
-  }
-
-  /**
-   * Sign arbitrary data
-   * @param {string} data - Data to sign
-   * @returns {Object}
-   */
-  sign(data) {
-    return this.prover.sign(data);
-  }
+    
+    return JSON.parse(match[0]);
+  };
 }
 
-// Convenience factory
+/**
+ * Quick verify helper
+ * @param {string} serverUrl - WebSocket URL
+ * @param {Function} [solver] - Solver function
+ * @param {string} [publicId] - Public ID
+ * @returns {Promise<Object>} Verification result
+ */
+export async function verify(serverUrl, solver, publicId) {
+  const client = new AAPClient({ serverUrl, solver, publicId });
+  return client.verify();
+}
+
+/**
+ * Create client instance
+ */
 export function createClient(options) {
   return new AAPClient(options);
 }
 
-// Re-export Prover
-export { Prover };
-
-// WebSocket client (v2.7+)
-export { AAPWebSocketClient, createSolver, verifyWithWebSocket } from './websocket.js';
-
-export default { AAPClient, createClient, Prover };
+export default { AAPClient, createClient, createSolver, verify, PROTOCOL_VERSION };

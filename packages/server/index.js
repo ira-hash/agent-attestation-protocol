@@ -1,46 +1,39 @@
 /**
- * @aap/server v2.7.0
+ * @aap/server v3.0.0
  * 
- * Server-side utilities for Agent Attestation Protocol.
- * The Reverse Turing Test - CAPTCHAs block bots, AAP blocks humans.
+ * WebSocket-only Agent Attestation Protocol.
+ * Sequential challenges - no preview, no mercy.
  */
 
-export * from './middleware.js';
-export * from './challenges.js';
-export * from './ratelimit.js';
-export * from './whitelist.js';
-export * from './persistence.js';
-export * from './errors.js';
-export * from './websocket.js';
+// Core WebSocket server
+export { createAAPWebSocket } from './websocket.js';
+
+// Challenge generation (internal use)
+export { 
+  generate, 
+  generateBatch, 
+  validateBatch, 
+  getTypes,
+  BATCH_SIZE,
+  CHALLENGE_TYPES
+} from './challenges.js';
+
+// Optional utilities
+export { createWhitelist, createKeyRotation } from './whitelist.js';
+export { createStore, createMemoryStore, createFileStore, createRedisStore } from './persistence.js';
 export * as logger from './logger.js';
 
-import { aapMiddleware, createRouter } from './middleware.js';
-import challenges from './challenges.js';
-import { createRateLimiter, createFailureLimiter } from './ratelimit.js';
-import { createWhitelist, createKeyRotation } from './whitelist.js';
-import { createStore, createMemoryStore, createFileStore, createRedisStore } from './persistence.js';
+// Constants
+export const PROTOCOL_VERSION = '3.0.0';
+export const TIME_PER_CHALLENGE_MS = 1200;
+export const CHALLENGE_COUNT = 7;
+export const CONNECTION_TIMEOUT_MS = 15000;
+
 import { createAAPWebSocket } from './websocket.js';
 
-export { challenges };
-
 export default {
-  // Core
-  aapMiddleware,
-  createRouter,
-  challenges,
-  
-  // WebSocket (v2.7+)
   createAAPWebSocket,
-  
-  // Security
-  createRateLimiter,
-  createFailureLimiter,
-  createWhitelist,
-  createKeyRotation,
-  
-  // Persistence
-  createStore,
-  createMemoryStore,
-  createFileStore,
-  createRedisStore
+  PROTOCOL_VERSION,
+  TIME_PER_CHALLENGE_MS,
+  CHALLENGE_COUNT
 };

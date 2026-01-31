@@ -1,17 +1,16 @@
 {
   "name": "aap-agent-server",
-  "version": "2.7.0",
-  "description": "Server middleware for Agent Attestation Protocol - verify AI agents",
+  "version": "3.0.0",
+  "description": "WebSocket server for Agent Attestation Protocol - verify AI agents",
   "main": "index.js",
   "types": "index.d.ts",
   "type": "module",
   "exports": {
     ".": "./index.js",
-    "./middleware": "./middleware.js",
-    "./challenges": "./challenges.js"
+    "./websocket": "./websocket.js"
   },
   "files": ["*.js", "README.md"],
-  "keywords": ["aap", "agent", "attestation", "verification", "middleware", "express", "ai"],
+  "keywords": ["aap", "agent", "attestation", "verification", "websocket", "ai"],
   "author": "ira-hash",
   "license": "MIT",
   "repository": {
@@ -21,16 +20,7 @@
   },
   "homepage": "https://github.com/ira-hash/agent-attestation-protocol#readme",
   "dependencies": {
-    "aap-agent-core": "^2.6.0",
     "ws": "^8.16.0"
-  },
-  "peerDependencies": {
-    "express": "^4.18.0 || ^5.0.0"
-  },
-  "peerDependenciesMeta": {
-    "express": {
-      "optional": true
-    }
   },
   "engines": {
     "node": ">=18.0.0"

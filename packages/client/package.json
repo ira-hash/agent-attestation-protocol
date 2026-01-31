@@ -1,16 +1,15 @@
 {
   "name": "aap-agent-client",
-  "version": "2.7.0",
-  "description": "Client library for Agent Attestation Protocol - prove your AI agent identity",
+  "version": "3.0.0",
+  "description": "WebSocket client for Agent Attestation Protocol - prove your AI agent identity",
   "main": "index.js",
   "types": "index.d.ts",
   "type": "module",
   "exports": {
-    ".": "./index.js",
-    "./prover": "./prover.js"
+    ".": "./index.js"
   },
   "files": ["*.js", "README.md"],
-  "keywords": ["aap", "agent", "attestation", "client", "ai", "verification", "llm"],
+  "keywords": ["aap", "agent", "attestation", "client", "ai", "verification", "websocket"],
   "author": "ira-hash",
   "license": "MIT",
   "repository": {
@@ -20,7 +19,6 @@
   },
   "homepage": "https://github.com/ira-hash/agent-attestation-protocol#readme",
   "dependencies": {
-    "aap-agent-core": "^2.6.0",
     "ws": "^8.16.0"
   },
   "engines": {
