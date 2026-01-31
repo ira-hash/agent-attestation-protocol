@@ -68,23 +68,32 @@ function generateSalt(nonce, offset = 0) {
  */
 export const CHALLENGE_TYPES = {
   /**
-   * Extract entities from natural language sentence
+   * Extract entities from natural language sentence (HARD - more distractors)
    */
   nlp_extract: {
     generate: (nonce) => {
       const salt = generateSalt(nonce, 0);
       const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
       const pool = WORD_POOLS[category];
-      const targets = seededSelect(pool, nonce, 2, 0);
+      const targets = seededSelect(pool, nonce, 3, 0);  // 3 targets now
+      const distractorPool = category === 'animals' ? 'fruits' : category === 'fruits' ? 'colors' : 'animals';
+      const distractors = seededSelect(WORD_POOLS[distractorPool], nonce, 2, 8);
       const verb = seededSelect(WORD_POOLS.verbs, nonce, 1, 4)[0];
+      const adj = seededSelect(WORD_POOLS.adjectives, nonce, 1, 6)[0];
       
-      const sentence = `The ${targets[0]} and ${targets[1]} ${verb} in the park.`;
+      // Complex sentence with distractors mixed in
+      const templates = [
+        `The ${adj} ${targets[0]}, a ${distractors[0]}, the ${targets[1]}, and ${targets[2]} all ${verb} near the ${distractors[1]}.`,
+        `I saw ${targets[0]} and ${distractors[0]} yesterday, but today only ${targets[1]}, ${targets[2]}, and a ${distractors[1]} appeared.`,
+        `Between the ${distractors[0]} and ${distractors[1]}, there were ${targets[0]}, ${targets[1]}, and ${targets[2]} ${verb}ing.`
+      ];
+      const sentence = templates[parseInt(nonce[12], 16) % templates.length];
       
       return {
-        challenge_string: `[REQ-${salt}] Extract only the ${category} from the following sentence.
+        challenge_string: `[REQ-${salt}] Extract ONLY the ${category} from this sentence (ignore other categories).
 Sentence: "${sentence}"
-Response format: {"salt": "${salt}", "items": ["item1", "item2"]}`,
-        expected: { salt, items: targets.sort() },
+Response format: {"salt": "${salt}", "items": ["item1", "item2", "item3"]}`,
+        expected: { salt, items: targets.map(s => s.toLowerCase()).sort() },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
@@ -95,7 +104,8 @@ Response format: {"salt": "${salt}", "items": ["item1", "item2"]}`,
             if (obj.salt !== salt) return false;
             
             const items = (obj.items || obj.animals || obj.fruits || obj.colors || []).map(s => s.toLowerCase()).sort();
-            return JSON.stringify(items) === JSON.stringify(targets.map(s => s.toLowerCase()).sort());
+            const expected = targets.map(s => s.toLowerCase()).sort();
+            return JSON.stringify(items) === JSON.stringify(expected);
           } catch { return false; }
         }
       };
@@ -103,31 +113,40 @@ Response format: {"salt": "${salt}", "items": ["item1", "item2"]}`,
   },
 
   /**
-   * Math problem expressed in natural language
+   * Math problem expressed in natural language (HARD)
    */
   nlp_math: {
     generate: (nonce) => {
       const salt = generateSalt(nonce, 2);
-      const a = seededNumber(nonce, 0, 10, 50);
-      const b = seededNumber(nonce, 2, 5, 20);
-      const c = seededNumber(nonce, 4, 2, 5);
+      const a = seededNumber(nonce, 0, 15, 99);
+      const b = seededNumber(nonce, 2, 5, 30);
+      const c = seededNumber(nonce, 4, 2, 7);
+      const d = seededNumber(nonce, 6, 2, 10);
       
       const templates = [
         {
-          text: `Subtract ${b} from ${a}, then multiply the result by ${c}.`,
-          answer: (a - b) * c
+          text: `Take ${a}, subtract ${b}, multiply by ${c}, then add ${d}.`,
+          answer: ((a - b) * c) + d
         },
         {
-          text: `Add ${a} and ${b} together, then divide by ${c}.`,
-          answer: (a + b) / c
+          text: `What do you get if you add ${a} to ${b}, divide the sum by ${c}, and round down?`,
+          answer: Math.floor((a + b) / c)
         },
         {
-          text: `Divide ${a} by ${c}, then add ${b} to the result.`,
-          answer: a / c + b
+          text: `Calculate: the product of ${c} and ${d}, plus the difference between ${a} and ${b}.`,
+          answer: (c * d) + (a - b)
+        },
+        {
+          text: `First double ${a}, then subtract ${b}, finally divide by ${c}.`,
+          answer: (a * 2 - b) / c
+        },
+        {
+          text: `If you have ${a} items, give away ${b}, then triple what remains. How many?`,
+          answer: (a - b) * 3
         }
       ];
       
-      const template = templates[parseInt(nonce[6], 16) % templates.length];
+      const template = templates[parseInt(nonce[8], 16) % templates.length];
       const expected = Math.round(template.answer * 100) / 100;
       
       return {
@@ -201,31 +220,43 @@ Response format: {"salt": "${salt}", "output": "result"}`,
   },
 
   /**
-   * Conditional logic
+   * Conditional logic (HARD - nested conditions)
    */
   nlp_logic: {
     generate: (nonce) => {
       const salt = generateSalt(nonce, 6);
       const a = seededNumber(nonce, 0, 10, 100);
       const b = seededNumber(nonce, 2, 10, 100);
-      const threshold = seededNumber(nonce, 4, 20, 80);
+      const c = seededNumber(nonce, 4, 10, 50);
+      const threshold = seededNumber(nonce, 6, 30, 80);
       
       const templates = [
         {
-          text: `If the larger number between ${a} and ${b} is greater than ${threshold}, answer "YES". Otherwise, answer "NO".`,
-          answer: Math.max(a, b) > threshold ? "YES" : "NO"
+          text: `Consider: A=${a}, B=${b}, C=${c}. If A is greater than B AND B is greater than C, answer "DESCENDING". If A is less than B AND B is less than C, answer "ASCENDING". Otherwise, answer "MIXED".`,
+          answer: (a > b && b > c) ? "DESCENDING" : (a < b && b < c) ? "ASCENDING" : "MIXED"
         },
         {
-          text: `If the sum of ${a} and ${b} is less than ${threshold * 2}, answer "SMALL". Otherwise, answer "LARGE".`,
-          answer: (a + b) < (threshold * 2) ? "SMALL" : "LARGE"
+          text: `Given ${a}, ${b}, and ${c}: If exactly two of these are even, answer "TWO". If all are even or all are odd, answer "ALL". Otherwise, answer "ONE".`,
+          answer: (() => {
+            const evens = [a, b, c].filter(n => n % 2 === 0).length;
+            return evens === 2 ? "TWO" : (evens === 0 || evens === 3) ? "ALL" : "ONE";
+          })()
         },
         {
-          text: `If ${a} is even and ${b} is odd, answer "MIXED". Otherwise, answer "SAME".`,
-          answer: (a % 2 === 0 && b % 2 === 1) ? "MIXED" : "SAME"
+          text: `If the average of ${a}, ${b}, and ${c} exceeds ${threshold}, respond "HIGH". Otherwise, respond "LOW".`,
+          answer: ((a + b + c) / 3) > threshold ? "HIGH" : "LOW"
+        },
+        {
+          text: `Among ${a}, ${b}, ${c}: if the largest minus the smallest is greater than ${threshold}, say "WIDE". Otherwise, say "NARROW".`,
+          answer: (Math.max(a, b, c) - Math.min(a, b, c)) > threshold ? "WIDE" : "NARROW"
+        },
+        {
+          text: `Is ${a} + ${b} greater than ${c} * 2? Answer "YES" or "NO".`,
+          answer: (a + b) > (c * 2) ? "YES" : "NO"
         }
       ];
       
-      const template = templates[parseInt(nonce[6], 16) % templates.length];
+      const template = templates[parseInt(nonce[8], 16) % templates.length];
       
       return {
         challenge_string: `[REQ-${salt}] ${template.text}
@@ -287,32 +318,57 @@ Response format: {"salt": "${salt}", "count": number}`,
   },
 
   /**
-   * Multi-step instruction following
+   * Multi-step instruction following (HARD - 4+ steps)
    */
   nlp_multistep: {
     generate: (nonce) => {
       const salt = generateSalt(nonce, 10);
       const numbers = [
-        seededNumber(nonce, 0, 1, 9),
-        seededNumber(nonce, 2, 1, 9),
-        seededNumber(nonce, 4, 1, 9),
-        seededNumber(nonce, 6, 1, 9)
+        seededNumber(nonce, 0, 2, 15),
+        seededNumber(nonce, 2, 2, 15),
+        seededNumber(nonce, 4, 2, 15),
+        seededNumber(nonce, 6, 2, 15),
+        seededNumber(nonce, 8, 2, 15)
       ];
       
-      // Step 1: Sum all
-      const sum = numbers.reduce((a, b) => a + b, 0);
-      // Step 2: Multiply by smallest
-      const min = Math.min(...numbers);
-      const step2 = sum * min;
-      // Step 3: Subtract largest
-      const max = Math.max(...numbers);
-      const final = step2 - max;
+      const templateType = parseInt(nonce[10], 16) % 3;
+      let instructions, final;
+      
+      if (templateType === 0) {
+        // Sum → remove max → multiply by count → add min
+        const sum = numbers.reduce((a, b) => a + b, 0);
+        const max = Math.max(...numbers);
+        const withoutMax = sum - max;
+        const timesCount = withoutMax * (numbers.length - 1);
+        final = timesCount + Math.min(...numbers);
+        instructions = `1. Sum all numbers in [${numbers.join(', ')}].
+2. Remove the largest number from that sum.
+3. Multiply the result by the count of remaining numbers.
+4. Add the smallest original number to that.`;
+      } else if (templateType === 1) {
+        // Sort → take middle → square → subtract sum of extremes
+        const sorted = [...numbers].sort((a, b) => a - b);
+        const middle = sorted[Math.floor(sorted.length / 2)];
+        const squared = middle * middle;
+        final = squared - (sorted[0] + sorted[sorted.length - 1]);
+        instructions = `1. Sort [${numbers.join(', ')}] in ascending order.
+2. Take the middle value.
+3. Square it.
+4. Subtract the sum of the smallest and largest values.`;
+      } else {
+        // Evens sum - odds sum → absolute value → double
+        const evensSum = numbers.filter(n => n % 2 === 0).reduce((a, b) => a + b, 0);
+        const oddsSum = numbers.filter(n => n % 2 !== 0).reduce((a, b) => a + b, 0);
+        final = Math.abs(evensSum - oddsSum) * 2;
+        instructions = `1. From [${numbers.join(', ')}], sum all even numbers.
+2. Sum all odd numbers separately.
+3. Find the absolute difference between these sums.
+4. Double that difference.`;
+      }
       
       return {
-        challenge_string: `[REQ-${salt}] Follow these instructions in order:
-1. Add all the numbers in [${numbers.join(', ')}] together.
-2. Multiply the result by the smallest number.
-3. Subtract the largest number from that result.
+        challenge_string: `[REQ-${salt}] Follow these steps precisely:
+${instructions}
 Response format: {"salt": "${salt}", "result": final_value}`,
         expected: { salt, result: final },
         validate: (solution) => {
