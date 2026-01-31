@@ -161,13 +161,13 @@ test('Response time tracked', () => {
 });
 
 test('8 second limit constant', () => {
-  const MAX_RESPONSE_TIME_MS = 8000;
-  assert(MAX_RESPONSE_TIME_MS === 8000, 'Limit is 8000ms');
+  const MAX_RESPONSE_TIME_MS = 6000;
+  assert(MAX_RESPONSE_TIME_MS === 6000, 'Limit is 6000ms');
 });
 
 test('Batch size constant', () => {
-  const BATCH_SIZE = 5;
-  assert(BATCH_SIZE === 5, 'Batch size is 5');
+  const BATCH_SIZE = 7;
+  assert(BATCH_SIZE === 7, 'Batch size is 7');
 });
 
 // ============== INTEGRATION TEST ==============

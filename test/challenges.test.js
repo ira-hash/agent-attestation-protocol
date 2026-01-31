@@ -102,18 +102,18 @@ for (const type of types) {
 // ============== BATCH TESTS ==============
 console.log('\n📦 Batch Challenge Tests\n');
 
-test('Batch generates 5 challenges', () => {
+test('Batch generates 7 challenges', () => {
   const nonce = randomBytes(16).toString('hex');
-  const batch = generateBatch(nonce, 5);
+  const batch = generateBatch(nonce, 7);
   
-  assert(batch.challenges.length === 5, 'Has 5 challenges');
-  assert(batch.validators.length === 5, 'Has 5 validators');
-  assert(batch.expected.length === 5, 'Has 5 expected');
+  assert(batch.challenges.length === 7, 'Has 7 challenges');
+  assert(batch.validators.length === 7, 'Has 5 validators');
+  assert(batch.expected.length === 7, 'Has 5 expected');
 });
 
 test('Batch challenges have different types', () => {
   const nonce = randomBytes(16).toString('hex');
-  const batch = generateBatch(nonce, 5);
+  const batch = generateBatch(nonce, 7);
   
   const types = batch.challenges.map(c => c.type);
   const uniqueTypes = new Set(types);
@@ -122,7 +122,7 @@ test('Batch challenges have different types', () => {
 
 test('Batch challenges have salts', () => {
   const nonce = randomBytes(16).toString('hex');
-  const batch = generateBatch(nonce, 5);
+  const batch = generateBatch(nonce, 7);
   
   const salts = batch.challenges.map(c => {
     const match = c.challenge_string.match(/\[REQ-([A-Z0-9]+)\]/);
@@ -131,13 +131,13 @@ test('Batch challenges have salts', () => {
   
   // All challenges should have salts
   assert(salts.every(s => s !== null), 'All challenges have salts');
-  assert(salts.length === 5, 'Has 5 salts');
+  assert(salts.length === 7, 'Has 5 salts');
 });
 
 test('Batch is deterministic with same nonce', () => {
   const nonce = randomBytes(16).toString('hex');
-  const batch1 = generateBatch(nonce, 5);
-  const batch2 = generateBatch(nonce, 5);
+  const batch1 = generateBatch(nonce, 7);
+  const batch2 = generateBatch(nonce, 7);
   
   for (let i = 0; i < 5; i++) {
     assert(batch1.challenges[i].type === batch2.challenges[i].type, `Same type at ${i}`);

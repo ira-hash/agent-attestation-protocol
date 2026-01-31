@@ -1,10 +1,15 @@
 /**
- * @aap/server - Challenge Generator v2.5
+ * @aap/server - Challenge Generator v2.6
  * 
  * "Burst Mode with Entropy Injection"
- * - 5 challenges in 8 seconds (humans cannot pass)
+ * - 7 challenges in 6 seconds (humans cannot pass)
  * - Salt injection prevents caching attacks
  * - Natural language instructions (requires LLM)
+ * 
+ * v2.6 Changes:
+ * - BATCH_SIZE: 5 → 7 (more problems = harder for humans)
+ * - MAX_RESPONSE_TIME_MS: 8000 → 6000 (tighter window)
+ * - Random chance reduced: (1/3)^7 = 0.05%
  * 
  * v2.5 Changes:
  * - BATCH_SIZE: 3 → 5
@@ -589,8 +594,8 @@ Response format: {"salt": "${salt}", "answer": "word"}`,
 /**
  * Batch challenge settings (v2.5 - Burst Mode)
  */
-export const BATCH_SIZE = 5;               // 5 challenges per batch (was 3)
-export const MAX_RESPONSE_TIME_MS = 8000;  // 8 seconds total (was 12)
+export const BATCH_SIZE = 7;               // 7 challenges per batch (v2.6: was 5)
+export const MAX_RESPONSE_TIME_MS = 6000;  // 6 seconds total (v2.6: was 8)
 export const CHALLENGE_EXPIRY_MS = 60000;  // 60 seconds
 
 /**

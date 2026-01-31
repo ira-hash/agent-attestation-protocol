@@ -31,8 +31,8 @@ app.use(express.json({ limit: '10kb' }));
 
 // ============== CONFIG ==============
 const PORT = process.env.PORT || 3000;
-const BATCH_SIZE = 5;
-const MAX_RESPONSE_TIME_MS = 8000;
+const BATCH_SIZE = 7;                    // v2.6: 5 → 7
+const MAX_RESPONSE_TIME_MS = 6000;       // v2.6: 8s → 6s
 const CHALLENGE_EXPIRY_MS = 60000;
 
 // ============== WORD POOLS ==============

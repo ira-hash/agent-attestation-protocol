@@ -5,17 +5,17 @@
  */
 
 // Protocol
-export const PROTOCOL_VERSION = '2.5.0';
+export const PROTOCOL_VERSION = '2.6.0';
 export const PROTOCOL_NAME = 'AAP';
 
 // Timing
 export const CHALLENGE_EXPIRY_MS = 60000;      // 60 seconds
-export const MAX_RESPONSE_TIME_MS = 8000;      // 8 seconds
+export const MAX_RESPONSE_TIME_MS = 6000;      // 6 seconds (v2.6: 8s → 6s)
 export const FETCH_TIMEOUT_MS = 30000;         // 30 seconds
 
 // Batch
-export const BATCH_SIZE = 5;
-export const MIN_PASS_COUNT = 5;               // All must pass by default
+export const BATCH_SIZE = 7;                   // v2.6: 5 → 7 challenges
+export const MIN_PASS_COUNT = 7;               // All must pass by default
 
 // Crypto
 export const NONCE_BYTES = 16;
