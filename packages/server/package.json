@@ -1,0 +1,34 @@
+{
+  "name": "@aap/server",
+  "version": "1.0.0",
+  "description": "Server middleware for Agent Attestation Protocol verification",
+  "main": "index.js",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./middleware": "./middleware.js",
+    "./challenges": "./challenges.js"
+  },
+  "keywords": ["aap", "agent", "attestation", "verification", "middleware", "express"],
+  "author": "ira-hash",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ira-hash/agent-attestation-protocol.git",
+    "directory": "packages/server"
+  },
+  "dependencies": {
+    "@aap/core": "^1.0.0"
+  },
+  "peerDependencies": {
+    "express": "^4.18.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

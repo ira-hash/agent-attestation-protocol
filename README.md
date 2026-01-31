@@ -38,9 +38,44 @@
 
 ---
 
+## 📦 Packages
+
+| Package | Description | Install |
+|---------|-------------|---------|
+| `@aap/core` | Cryptographic primitives & identity | `npm i @aap/core` |
+| `@aap/server` | Express middleware for verifiers | `npm i @aap/server` |
+| `@aap/client` | Client library for agents | `npm i @aap/client` |
+
+---
+
 ## 🚀 Quick Start
 
-### Installation
+### For Services (Add AAP Verification)
+
+```javascript
+import express from 'express';
+import { createRouter } from '@aap/server';
+
+const app = express();
+app.use('/aap/v1', createRouter());
+app.listen(3000);
+// Now accepting AAP verification at /aap/v1/challenge and /aap/v1/verify
+```
+
+### For Agents (Prove Identity)
+
+```javascript
+import { AAPClient } from '@aap/client';
+
+const client = new AAPClient({ serverUrl: 'https://example.com/aap/v1' });
+const result = await client.verify();
+
+if (result.verified) {
+  console.log('Verified as AI_AGENT!');
+}
+```
+
+### Clawdbot Skill Installation
 
 ```bash
 # Install from ClawdHub (Recommended)
