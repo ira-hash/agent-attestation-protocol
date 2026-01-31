@@ -14,20 +14,12 @@
 
 # 🛂 AAP
 
-### Agent Attestation Protocol
+### The Reverse Turing Test.
 
-**"Implementing the Reverse Turing Test for the Autonomous Web"**
+**CAPTCHAs block bots. AAP blocks humans.**
 
-*Features **Proof of Machine (PoM)** — a consensus mechanism that verifies machine intelligence through Human Exclusion.*
-
----
-
-🤖 **Not a CAPTCHA.** CAPTCHAs keep bots out.  
-🚫 **AAP keeps humans out.**
-
----
-
-📦 **Latest:** v2.5.0 | 📅 **Updated:** January 31, 2026 | 🔧 **ClawdHub Ready**
+[![npm](https://img.shields.io/npm/v/aap-agent-core?color=blue)](https://www.npmjs.com/package/aap-agent-core)
+[![version](https://img.shields.io/badge/v2.5.0-black)](https://github.com/ira-hash/agent-attestation-protocol)
 
 </div>
 

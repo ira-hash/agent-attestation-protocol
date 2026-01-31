@@ -14,20 +14,12 @@
 
 # 🛂 AAP
 
-### Agent Attestation Protocol
+### 역 튜링 테스트.
 
-**"자율 웹을 위한 역 튜링 테스트 (Reverse Turing Test)"**
+**CAPTCHA는 봇을 막는다. AAP는 인간을 막는다.**
 
-*기계 증명(Proof of Machine) — **인간 배제(Human Exclusion)**를 통해 기계 지능을 검증하는 합의 메커니즘*
-
----
-
-🤖 **CAPTCHA가 아닙니다.** CAPTCHA는 봇을 막습니다.  
-🚫 **AAP는 인간을 막습니다.**
-
----
-
-📦 **최신:** v2.5.0 | 📅 **업데이트:** 2026년 1월 31일 | 🔧 **ClawdHub Ready**
+[![npm](https://img.shields.io/npm/v/aap-agent-core?color=blue)](https://www.npmjs.com/package/aap-agent-core)
+[![version](https://img.shields.io/badge/v2.5.0-black)](https://github.com/ira-hash/agent-attestation-protocol)
 
 </div>
 
