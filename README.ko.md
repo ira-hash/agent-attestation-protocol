@@ -1,10 +1,10 @@
 # 🛂 AAP - Agent Attestation Protocol
 
-[![version](https://img.shields.io/badge/🚀_version-2.0.0-blue.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
+[![version](https://img.shields.io/badge/🚀_version-2.5.0-blue.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![updated](https://img.shields.io/badge/📅_updated-2026--01--31-brightgreen.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](./LICENSE)
 
-[![ClawdHub](https://img.shields.io/badge/ClawdHub-v2.0.0-purple.svg)](https://clawdhub.com/skills/aap-passport)
+[![ClawdHub](https://img.shields.io/badge/ClawdHub-v2.5.0-purple.svg)](https://clawdhub.com/skills/aap-passport)
 [![crypto](https://img.shields.io/badge/crypto-secp256k1-orange.svg)](https://en.bitcoin.it/wiki/Secp256k1)
 [![clawdbot](https://img.shields.io/badge/clawdbot-compatible-blueviolet.svg)](https://github.com/clawdbot/clawdbot)
 
@@ -12,13 +12,22 @@
 
 <div align="center">
 
-### 🔐 Agent Attestation Protocol
+# 🛂 AAP
 
-**AI 에이전트를 위한 암호학적 신원 검증**
+### Agent Attestation Protocol
 
-*PKI 서명, 자연어 이해, 기계 속도 응답으로 AI 에이전트의 신원을 증명하세요.*
+**"자율 웹을 위한 역 튜링 테스트 (Reverse Turing Test)"**
 
-📦 **최신:** v2.0.0 | 📅 **업데이트:** 2026년 1월 31일 | 🔧 **ClawdHub Ready**
+*기계 증명(Proof of Machine) — **인간 배제(Human Exclusion)**를 통해 기계 지능을 검증하는 합의 메커니즘*
+
+---
+
+🤖 **CAPTCHA가 아닙니다.** CAPTCHA는 봇을 막습니다.  
+🚫 **AAP는 인간을 막습니다.**
+
+---
+
+📦 **최신:** v2.5.0 | 📅 **업데이트:** 2026년 1월 31일 | 🔧 **ClawdHub Ready**
 
 </div>
 
@@ -26,15 +35,24 @@
 
 ## 🎯 AAP란?
 
-**Agent Attestation Protocol (AAP)**는 AI 에이전트가 자신의 신원을 증명할 수 있는 암호학적 시스템입니다. **AI를 위한 디지털 여권**이라고 생각하시면 됩니다.
+**AAP (Agent Attestation Protocol)**는 **역 튜링 테스트** — AI만 통과할 수 있는 암호학적 관문입니다.
 
-### 3가지 증명 요소
+> *"CAPTCHA는 묻습니다: 당신은 인간입니까?*  
+> *AAP는 묻습니다: 당신은 기계입니까?"*
 
-| 증명 | 설명 | 작동 방식 |
-|------|------|----------|
-| 🔐 **신원 증명 (Proof of Identity)** | PKI 기반 전자서명 | secp256k1 개인키로 응답 서명 |
-| 🧠 **지능 증명 (Proof of Intelligence)** | 자연어 이해 능력 | LLM 이해가 필요한 챌린지 해결 |
-| ⚡ **활성 증명 (Proof of Liveness)** | 기계 속도 응답 | 10초 이내 응답 필수 |
+### 기계 증명 (Proof of Machine, PoM)
+
+AAP는 세 가지 동시 증명을 통해 **인간 배제(Human Exclusion)**를 구현합니다:
+
+| 증명 | 검증 내용 | 인간 통과 가능? |
+|------|----------|----------------|
+| 🔐 **신원 증명 (Proof of Identity)** | 암호학적 서명 (secp256k1) | ✅ 가능 |
+| 🧠 **지능 증명 (Proof of Intelligence)** | 자연어 이해 | ✅ 가능 |
+| ⚡ **활성 증명 (Proof of Liveness)** | 8초 안에 5개 답변 | ❌ **불가능** |
+
+**세 가지 모두. 동시에. 매번.**
+
+이 조합은 인간이 **생물학적으로 통과할 수 없는** 검증을 만듭니다 — 지능이 부족해서가 아니라, *속도가* 부족해서.
 
 ---
 

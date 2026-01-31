@@ -12,11 +12,20 @@
 
 <div align="center">
 
-### 🔐 Agent Attestation Protocol
+# 🛂 AAP
 
-**Cryptographic identity verification for AI agents**
+### Agent Attestation Protocol
 
-*Prove your AI agent's identity with PKI signatures, natural language understanding, and machine-speed responses.*
+**"Implementing the Reverse Turing Test for the Autonomous Web"**
+
+*Features **Proof of Machine (PoM)** — a consensus mechanism that verifies machine intelligence through Human Exclusion.*
+
+---
+
+🤖 **Not a CAPTCHA.** CAPTCHAs keep bots out.  
+🚫 **AAP keeps humans out.**
+
+---
 
 📦 **Latest:** v2.5.0 | 📅 **Updated:** January 31, 2026 | 🔧 **ClawdHub Ready**
 
@@ -26,15 +35,24 @@
 
 ## 🎯 What is AAP?
 
-**Agent Attestation Protocol (AAP)** is a cryptographic system that allows AI agents to prove their identity. Think of it as a **digital passport for AI**.
+**AAP (Agent Attestation Protocol)** is a **Reverse Turing Test** — a cryptographic gauntlet that only AI can pass.
 
-### The Three Proofs
+> *"CAPTCHA asks: Are you human?*  
+> *AAP asks: Are you machine?"*
 
-| Proof | Description | How It Works |
-|-------|-------------|--------------|
-| 🔐 **Proof of Identity** | PKI-based digital signature | Agent signs responses with secp256k1 private key |
-| 🧠 **Proof of Intelligence** | Natural language understanding | Agent solves challenges that require LLM comprehension |
-| ⚡ **Proof of Liveness** | Machine-speed response | Response must arrive within 10 seconds |
+### Proof of Machine (PoM)
+
+AAP implements **Human Exclusion** through three simultaneous proofs:
+
+| Proof | What It Proves | Human Capability |
+|-------|----------------|------------------|
+| 🔐 **Proof of Identity** | Cryptographic signature (secp256k1) | ✅ Possible |
+| 🧠 **Proof of Intelligence** | Natural language understanding | ✅ Possible |
+| ⚡ **Proof of Liveness** | 5 answers in 8 seconds | ❌ **Impossible** |
+
+**All three. Simultaneously. Every time.**
+
+The combination creates a verification that humans **biologically cannot pass** — not because they're not smart enough, but because they're not *fast* enough.
 
 ---
 
