@@ -336,6 +336,7 @@ app.post('/verify', (req, res) => {
   }
 
   if (passed < BATCH_SIZE) {
+    metrics.verifications.failed++;
     return res.status(400).json({
       verified: false,
       error: `Proof of Intelligence failed: ${passed}/${BATCH_SIZE} correct`,
@@ -368,18 +369,54 @@ app.post('/verify', (req, res) => {
     return res.status(400).json({ verified: false, error: 'Signature verification error' });
   }
 
-  // SUCCESS
+  // SUCCESS - track metrics
+  metrics.verifications.success++;
+  metrics.responseTimes.push(effectiveTime);
+  if (metrics.responseTimes.length > 100) metrics.responseTimes.shift();
+  metrics.avgResponseTime = Math.round(
+    metrics.responseTimes.reduce((a, b) => a + b, 0) / metrics.responseTimes.length
+  );
+  
   res.json({
     verified: true,
     role: 'AI_AGENT',
     publicId,
     batchResult: { passed, total: BATCH_SIZE, results },
-    responseTimeMs
+    responseTimeMs: effectiveTime
   });
 });
 
+// ============== METRICS ==============
+const metrics = {
+  startTime: Date.now(),
+  requests: { challenge: 0, verify: 0, health: 0 },
+  verifications: { success: 0, failed: 0 },
+  avgResponseTime: 0,
+  responseTimes: []
+};
+
+app.get('/metrics', (req, res) => {
+  const uptime = Math.floor((Date.now() - metrics.startTime) / 1000);
+  res.json({
+    uptime,
+    activeChallenges: challenges.size,
+    requests: metrics.requests,
+    verifications: metrics.verifications,
+    avgResponseTimeMs: metrics.avgResponseTime,
+    successRate: metrics.verifications.success / (metrics.verifications.success + metrics.verifications.failed) || 0
+  });
+});
+
+// Track metrics middleware
+app.use((req, res, next) => {
+  if (req.path === '/challenge') metrics.requests.challenge++;
+  else if (req.path === '/verify') metrics.requests.verify++;
+  else if (req.path === '/health') metrics.requests.health++;
+  next();
+});
+
 // ============== START ==============
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`
 🛂 AAP Verification Server v2.5.0 (EXTREME)
 ============================================
@@ -392,7 +429,33 @@ Endpoints:
   POST /challenge  → Get batch challenges
   POST /verify     → Submit solutions
   GET  /health     → Health check
+  GET  /metrics    → Server metrics
 
 CAPTCHAs block bots. AAP blocks humans. 🤖
 `);
 });
+
+// ============== GRACEFUL SHUTDOWN ==============
+let isShuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log(`\n[AAP] ${signal} received, shutting down gracefully...`);
+  
+  server.close(() => {
+    console.log('[AAP] HTTP server closed');
+    console.log(`[AAP] Final stats: ${metrics.verifications.success} successful verifications`);
+    process.exit(0);
+  });
+  
+  // Force exit after 10 seconds
+  setTimeout(() => {
+    console.error('[AAP] Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
