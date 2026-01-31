@@ -216,18 +216,6 @@ const result = await bot.tool('aap_generate_proof', {
 
 ---
 
-## 🛣️ Roadmap
-
-- [x] Core identity generation
-- [x] Challenge-Response verification
-- [x] Express.js example server
-- [ ] ClawHub deployment
-- [ ] Multi-agent verification
-- [ ] Blockchain registration (optional)
-- [ ] Hardware key support
-
----
-
 ## 📄 License
 
 MIT
