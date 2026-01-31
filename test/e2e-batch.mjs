@@ -6,12 +6,12 @@
 
 import { randomBytes, createHash, generateKeyPairSync, createSign, createVerify } from 'node:crypto';
 
-console.log('🧪 AAP v2.0 - End-to-End Batch Test\n');
+console.log('🧪 AAP v2.5 - Burst Mode E2E Test\n');
 console.log('='.repeat(60));
 
 // ============== CONFIG ==============
-const BATCH_SIZE = 3;
-const MAX_RESPONSE_TIME_MS = 12000;
+const BATCH_SIZE = 5;  // v2.5 Burst Mode
+const MAX_RESPONSE_TIME_MS = 8000;  // v2.5: 8초
 
 // ============== WORD POOLS ==============
 const WORD_POOLS = {
@@ -35,59 +35,112 @@ function seededSelect(arr, nonce, count, offset = 0) {
   return results;
 }
 
-// ============== CHALLENGE GENERATORS ==============
+// ============== CHALLENGE GENERATORS (v2.5 with salt) ==============
+function generateSalt(nonce, offset = 0) {
+  return nonce.slice(offset, offset + 6).toUpperCase();
+}
+
 const CHALLENGE_TYPES = {
   nlp_math: (nonce) => {
+    const salt = generateSalt(nonce, 0);
     const a = seededNumber(nonce, 0, 10, 50);
     const b = seededNumber(nonce, 2, 5, 20);
     const c = seededNumber(nonce, 4, 2, 5);
     const expected = (a - b) * c;
     return {
-      challenge_string: `Subtract ${b} from ${a}, then multiply the result by ${c}.\nResponse format: {"result": number}`,
+      challenge_string: `[REQ-${salt}] Subtract ${b} from ${a}, then multiply the result by ${c}.\nResponse format: {"salt": "${salt}", "result": number}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
-          return Math.abs(JSON.parse(m[0]).result - expected) < 0.01;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return Math.abs(obj.result - expected) < 0.01;
         } catch { return false; }
       },
-      solve: () => JSON.stringify({ result: expected })
+      solve: () => JSON.stringify({ salt, result: expected })
     };
   },
 
   nlp_extract: (nonce) => {
+    const salt = generateSalt(nonce, 2);
     const targets = seededSelect(WORD_POOLS.animals, nonce, 2, 0);
     const verb = seededSelect(WORD_POOLS.verbs, nonce, 1, 4)[0];
     const sentence = `The ${targets[0]} and ${targets[1]} ${verb} in the park.`;
     return {
-      challenge_string: `Extract only the animals from the following sentence and respond as a JSON array.\nSentence: "${sentence}"\nResponse format: {"items": ["item1", "item2"]}`,
+      challenge_string: `[REQ-${salt}] Extract only the animals from the following sentence.\nSentence: "${sentence}"\nResponse format: {"salt": "${salt}", "items": ["item1", "item2"]}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
-          const items = JSON.parse(m[0]).items.map(s => s.toLowerCase()).sort();
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          const items = obj.items.map(s => s.toLowerCase()).sort();
           return JSON.stringify(items) === JSON.stringify(targets.map(s => s.toLowerCase()).sort());
         } catch { return false; }
       },
-      solve: () => JSON.stringify({ items: targets })
+      solve: () => JSON.stringify({ salt, items: targets })
     };
   },
 
   nlp_logic: (nonce) => {
+    const salt = generateSalt(nonce, 4);
     const a = seededNumber(nonce, 0, 10, 100);
     const b = seededNumber(nonce, 2, 10, 100);
     const threshold = seededNumber(nonce, 4, 20, 80);
     const expected = Math.max(a, b) > threshold ? "YES" : "NO";
     return {
-      challenge_string: `If the larger number between ${a} and ${b} is greater than ${threshold}, answer "YES". Otherwise, answer "NO".\nResponse format: {"answer": "your answer"}`,
+      challenge_string: `[REQ-${salt}] If the larger number between ${a} and ${b} is greater than ${threshold}, answer "YES". Otherwise, answer "NO".\nResponse format: {"salt": "${salt}", "answer": "your answer"}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
-          return JSON.parse(m[0]).answer?.toUpperCase() === expected;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return obj.answer?.toUpperCase() === expected;
         } catch { return false; }
       },
-      solve: () => JSON.stringify({ answer: expected })
+      solve: () => JSON.stringify({ salt, answer: expected })
+    };
+  },
+
+  nlp_count: (nonce) => {
+    const salt = generateSalt(nonce, 6);
+    const count = seededNumber(nonce, 0, 2, 4);
+    const animals = seededSelect(WORD_POOLS.animals, nonce, count, 0);
+    const countries = seededSelect(WORD_POOLS.colors, nonce, 2, 4);
+    const mixed = [...animals, ...countries].sort();
+    return {
+      challenge_string: `[REQ-${salt}] Count only the animals: ${mixed.join(', ')}\nResponse format: {"salt": "${salt}", "count": number}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return parseInt(obj.count) === count;
+        } catch { return false; }
+      },
+      solve: () => JSON.stringify({ salt, count })
+    };
+  },
+
+  nlp_transform: (nonce) => {
+    const salt = generateSalt(nonce, 8);
+    const input = nonce.slice(10, 16);
+    const expected = input.split('').reverse().join('').toUpperCase();
+    return {
+      challenge_string: `[REQ-${salt}] Reverse "${input}" and uppercase it.\nResponse format: {"salt": "${salt}", "output": "result"}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return obj.output === expected;
+        } catch { return false; }
+      },
+      solve: () => JSON.stringify({ salt, output: expected })
     };
   }
 };

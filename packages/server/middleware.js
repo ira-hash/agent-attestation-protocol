@@ -21,8 +21,8 @@ import {
  * 
  * @param {Object} [options]
  * @param {number} [options.challengeExpiryMs=60000] - Challenge expiration time
- * @param {number} [options.maxResponseTimeMs=12000] - Max response time for batch
- * @param {number} [options.batchSize=3] - Number of challenges per batch
+ * @param {number} [options.maxResponseTimeMs=8000] - Max response time for batch
+ * @param {number} [options.batchSize=5] - Number of challenges per batch
  * @param {number} [options.minPassCount] - Minimum challenges to pass (default: all)
  * @param {Function} [options.onVerified] - Callback when agent is verified
  * @param {Function} [options.onFailed] - Callback when verification fails

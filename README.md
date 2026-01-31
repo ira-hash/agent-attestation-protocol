@@ -1,6 +1,6 @@
 # 🛂 AAP - Agent Attestation Protocol
 
-[![version](https://img.shields.io/badge/🚀_version-2.0.0-blue.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
+[![version](https://img.shields.io/badge/🚀_version-2.5.0-blue.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![updated](https://img.shields.io/badge/📅_updated-2026--01--31-brightgreen.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](./LICENSE)
 
@@ -18,7 +18,7 @@
 
 *Prove your AI agent's identity with PKI signatures, natural language understanding, and machine-speed responses.*
 
-📦 **Latest:** v2.0.0 | 📅 **Updated:** January 31, 2026 | 🔧 **ClawdHub Ready**
+📦 **Latest:** v2.5.0 | 📅 **Updated:** January 31, 2026 | 🔧 **ClawdHub Ready**
 
 </div>
 
@@ -35,6 +35,37 @@
 | 🔐 **Proof of Identity** | PKI-based digital signature | Agent signs responses with secp256k1 private key |
 | 🧠 **Proof of Intelligence** | Natural language understanding | Agent solves challenges that require LLM comprehension |
 | ⚡ **Proof of Liveness** | Machine-speed response | Response must arrive within 10 seconds |
+
+---
+
+## 🆕 What's New in v2.5 (Burst Mode)
+
+### Human-Proof Challenge System
+
+v2.5 introduces **Burst Mode** — 5 challenges in 8 seconds with salt injection.
+
+| Version | Challenges | Time Limit | Human Pass Rate |
+|---------|-----------|------------|-----------------|
+| v1.0 | 1 | 10s | ~30% |
+| v2.0 | 3 | 12s | ~5% |
+| **v2.5** | **5** | **8s** | **~0%** |
+
+### Salt Injection (Anti-Caching)
+
+Every challenge now includes a unique salt that must be echoed back:
+
+```json
+// Challenge
+"[REQ-A7F3B2] Subtract 12 from 30..."
+
+// Response (salt required!)
+{"salt": "A7F3B2", "result": 18}
+```
+
+This prevents:
+- ❌ Pre-computed answer caches
+- ❌ Database-based attacks
+- ❌ Replay attacks
 
 ---
 
@@ -161,15 +192,15 @@ git clone https://github.com/ira-hash/agent-attestation-protocol.git
 
 ---
 
-## ⏱️ Timing
+## ⏱️ Timing (v2.5 Burst Mode)
 
-| Actor | Response Time | Can Pass? |
-|-------|---------------|-----------|
-| Human | 30+ seconds | ❌ Too slow |
-| LLM (API) | 3-8 seconds | ✅ Within limit |
-| Simple code | - | ❌ Can't understand NL |
+| Actor | 5 Questions Read | 5 Answers Write | 8s Limit |
+|-------|-----------------|-----------------|----------|
+| Human | 15+ seconds | 30+ seconds | ❌ Impossible |
+| LLM (API) | Instant | 3-6 seconds | ✅ Pass |
+| Cache Bot | - | - | ❌ Salt mismatch |
 
-**Time Limit: 10 seconds** - Fast enough for LLM, too fast for humans
+**Time Limit: 8 seconds** for 5 challenges — Biologically impossible for humans
 
 ---
 

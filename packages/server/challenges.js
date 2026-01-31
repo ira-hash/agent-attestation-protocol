@@ -1,11 +1,15 @@
 /**
- * @aap/server - Challenge Generator v2.0
+ * @aap/server - Challenge Generator v2.5
  * 
- * "Deterministic Instruction Following"
- * - Natural language instructions (requires LLM to understand)
- * - Deterministic answers (server knows the correct answer)
+ * "Burst Mode with Entropy Injection"
+ * - 5 challenges in 8 seconds (humans cannot pass)
+ * - Salt injection prevents caching attacks
+ * - Natural language instructions (requires LLM)
  * 
- * Principle: Instructions in natural language, but answers are verifiable.
+ * v2.5 Changes:
+ * - BATCH_SIZE: 3 → 5
+ * - MAX_RESPONSE_TIME_MS: 12000 → 8000
+ * - Salt injection in challenges (must be echoed back)
  */
 
 import { createHash } from 'node:crypto';
@@ -14,12 +18,12 @@ import { createHash } from 'node:crypto';
  * Word pools for dynamic challenge generation
  */
 const WORD_POOLS = {
-  animals: ['cat', 'dog', 'rabbit', 'tiger', 'lion', 'elephant', 'giraffe', 'penguin', 'eagle', 'shark'],
-  fruits: ['apple', 'banana', 'orange', 'grape', 'strawberry', 'watermelon', 'peach', 'kiwi', 'mango', 'cherry'],
-  colors: ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'brown'],
-  countries: ['Korea', 'Japan', 'USA', 'UK', 'France', 'Germany', 'Australia', 'Canada', 'Brazil', 'India'],
-  verbs: ['runs', 'eats', 'sleeps', 'plays', 'works', 'studies', 'travels', 'cooks'],
-  adjectives: ['big', 'small', 'fast', 'slow', 'beautiful', 'cute', 'delicious', 'interesting']
+  animals: ['cat', 'dog', 'rabbit', 'tiger', 'lion', 'elephant', 'giraffe', 'penguin', 'eagle', 'shark', 'wolf', 'bear', 'fox', 'deer', 'owl'],
+  fruits: ['apple', 'banana', 'orange', 'grape', 'strawberry', 'watermelon', 'peach', 'kiwi', 'mango', 'cherry', 'lemon', 'lime', 'pear', 'plum'],
+  colors: ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'brown', 'gray', 'cyan', 'magenta'],
+  countries: ['Korea', 'Japan', 'USA', 'UK', 'France', 'Germany', 'Australia', 'Canada', 'Brazil', 'India', 'Italy', 'Spain', 'Mexico'],
+  verbs: ['runs', 'eats', 'sleeps', 'plays', 'works', 'studies', 'travels', 'cooks', 'reads', 'writes', 'sings', 'dances'],
+  adjectives: ['big', 'small', 'fast', 'slow', 'beautiful', 'cute', 'delicious', 'interesting', 'bright', 'dark']
 };
 
 /**
@@ -50,6 +54,16 @@ function seededNumber(nonce, offset, min, max) {
 }
 
 /**
+ * Generate salt from nonce (for entropy injection)
+ * @param {string} nonce - Base nonce
+ * @param {number} offset - Offset for variation
+ * @returns {string} 6-character salt
+ */
+function generateSalt(nonce, offset = 0) {
+  return nonce.slice(offset, offset + 6).toUpperCase();
+}
+
+/**
  * Challenge type definitions
  */
 export const CHALLENGE_TYPES = {
@@ -58,6 +72,7 @@ export const CHALLENGE_TYPES = {
    */
   nlp_extract: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 0);
       const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
       const pool = WORD_POOLS[category];
       const targets = seededSelect(pool, nonce, 2, 0);
@@ -66,15 +81,19 @@ export const CHALLENGE_TYPES = {
       const sentence = `The ${targets[0]} and ${targets[1]} ${verb} in the park.`;
       
       return {
-        challenge_string: `Extract only the ${category} from the following sentence and respond as a JSON array.
+        challenge_string: `[REQ-${salt}] Extract only the ${category} from the following sentence.
 Sentence: "${sentence}"
-Response format: {"items": ["item1", "item2"]}`,
-        expected: targets.sort(),
+Response format: {"salt": "${salt}", "items": ["item1", "item2"]}`,
+        expected: { salt, items: targets.sort() },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            // Check salt
+            if (obj.salt !== salt) return false;
+            
             const items = (obj.items || obj.animals || obj.fruits || obj.colors || []).map(s => s.toLowerCase()).sort();
             return JSON.stringify(items) === JSON.stringify(targets.map(s => s.toLowerCase()).sort());
           } catch { return false; }
@@ -88,6 +107,7 @@ Response format: {"items": ["item1", "item2"]}`,
    */
   nlp_math: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 2);
       const a = seededNumber(nonce, 0, 10, 50);
       const b = seededNumber(nonce, 2, 5, 20);
       const c = seededNumber(nonce, 4, 2, 5);
@@ -111,14 +131,17 @@ Response format: {"items": ["item1", "item2"]}`,
       const expected = Math.round(template.answer * 100) / 100;
       
       return {
-        challenge_string: `${template.text}
-Response format: {"result": number}`,
-        expected,
+        challenge_string: `[REQ-${salt}] ${template.text}
+Response format: {"salt": "${salt}", "result": number}`,
+        expected: { salt, result: expected },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             const result = parseFloat(obj.result);
             return Math.abs(result - expected) < 0.01;
           } catch { return false; }
@@ -132,7 +155,8 @@ Response format: {"result": number}`,
    */
   nlp_transform: {
     generate: (nonce) => {
-      const input = nonce.slice(0, 6);
+      const salt = generateSalt(nonce, 4);
+      const input = nonce.slice(8, 14);
       const transformType = parseInt(nonce[6], 16) % 4;
       
       let instruction, expected;
@@ -157,14 +181,17 @@ Response format: {"result": number}`,
       }
       
       return {
-        challenge_string: `${instruction}
-Response format: {"output": "result"}`,
-        expected,
+        challenge_string: `[REQ-${salt}] ${instruction}
+Response format: {"salt": "${salt}", "output": "result"}`,
+        expected: { salt, output: expected },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             const output = String(obj.output);
             return output === String(expected) || output.toLowerCase() === String(expected).toLowerCase();
           } catch { return false; }
@@ -178,6 +205,7 @@ Response format: {"output": "result"}`,
    */
   nlp_logic: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 6);
       const a = seededNumber(nonce, 0, 10, 100);
       const b = seededNumber(nonce, 2, 10, 100);
       const threshold = seededNumber(nonce, 4, 20, 80);
@@ -200,14 +228,17 @@ Response format: {"output": "result"}`,
       const template = templates[parseInt(nonce[6], 16) % templates.length];
       
       return {
-        challenge_string: `${template.text}
-Response format: {"answer": "your answer"}`,
-        expected: template.answer,
+        challenge_string: `[REQ-${salt}] ${template.text}
+Response format: {"salt": "${salt}", "answer": "your answer"}`,
+        expected: { salt, answer: template.answer },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             return obj.answer?.toUpperCase() === template.answer.toUpperCase();
           } catch { return false; }
         }
@@ -220,6 +251,7 @@ Response format: {"answer": "your answer"}`,
    */
   nlp_count: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 8);
       const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
       const pool = WORD_POOLS[category];
       const count1 = seededNumber(nonce, 0, 2, 4);
@@ -235,15 +267,18 @@ Response format: {"answer": "your answer"}`,
       const sentence = `I see ${allItems.join(', ')} in the picture.`;
       
       return {
-        challenge_string: `Count only the ${category} in the following sentence.
+        challenge_string: `[REQ-${salt}] Count only the ${category} in the following sentence.
 Sentence: "${sentence}"
-Response format: {"count": number}`,
-        expected: count1,
+Response format: {"salt": "${salt}", "count": number}`,
+        expected: { salt, count: count1 },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             return parseInt(obj.count) === count1;
           } catch { return false; }
         }
@@ -256,6 +291,7 @@ Response format: {"count": number}`,
    */
   nlp_multistep: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 10);
       const numbers = [
         seededNumber(nonce, 0, 1, 9),
         seededNumber(nonce, 2, 1, 9),
@@ -273,17 +309,20 @@ Response format: {"count": number}`,
       const final = step2 - max;
       
       return {
-        challenge_string: `Follow these instructions in order:
+        challenge_string: `[REQ-${salt}] Follow these instructions in order:
 1. Add all the numbers in [${numbers.join(', ')}] together.
 2. Multiply the result by the smallest number.
 3. Subtract the largest number from that result.
-Response format: {"result": final_value}`,
-        expected: final,
+Response format: {"salt": "${salt}", "result": final_value}`,
+        expected: { salt, result: final },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             return parseInt(obj.result) === final;
           } catch { return false; }
         }
@@ -296,6 +335,7 @@ Response format: {"result": final_value}`,
    */
   nlp_pattern: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 12);
       const start = seededNumber(nonce, 0, 1, 10);
       const step = seededNumber(nonce, 2, 2, 5);
       const patternType = parseInt(nonce[4], 16) % 3;
@@ -321,14 +361,17 @@ Response format: {"result": final_value}`,
       }
       
       return {
-        challenge_string: `${instruction}
-Response format: {"next": [number1, number2]}`,
-        expected: next2,
+        challenge_string: `[REQ-${salt}] ${instruction}
+Response format: {"salt": "${salt}", "next": [number1, number2]}`,
+        expected: { salt, next: next2 },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             const next = obj.next;
             return Array.isArray(next) && 
                    parseInt(next[0]) === next2[0] && 
@@ -344,6 +387,7 @@ Response format: {"next": [number1, number2]}`,
    */
   nlp_analysis: {
     generate: (nonce) => {
+      const salt = generateSalt(nonce, 14);
       const words = seededSelect([...WORD_POOLS.animals, ...WORD_POOLS.fruits], nonce, 5, 0);
       const analysisType = parseInt(nonce[8], 16) % 3;
       
@@ -366,14 +410,17 @@ Response format: {"next": [number1, number2]}`,
       }
       
       return {
-        challenge_string: `${instruction}
-Response format: {"answer": "word"}`,
-        expected,
+        challenge_string: `[REQ-${salt}] ${instruction}
+Response format: {"salt": "${salt}", "answer": "word"}`,
+        expected: { salt, answer: expected },
         validate: (solution) => {
           try {
             const match = solution.match(/\{[\s\S]*\}/);
             if (!match) return false;
             const obj = JSON.parse(match[0]);
+            
+            if (obj.salt !== salt) return false;
+            
             return obj.answer?.toLowerCase() === expected.toLowerCase();
           } catch { return false; }
         }
@@ -382,13 +429,13 @@ Response format: {"answer": "word"}`,
   }
 };
 
-// ============== Protocol Constants ==============
+// ============== Protocol Constants v2.5 ==============
 
 /**
- * Batch challenge settings
+ * Batch challenge settings (v2.5 - Burst Mode)
  */
-export const BATCH_SIZE = 3;              // Number of challenges per batch
-export const MAX_RESPONSE_TIME_MS = 12000; // 12 seconds for batch (avg 4s per challenge)
+export const BATCH_SIZE = 5;               // 5 challenges per batch (was 3)
+export const MAX_RESPONSE_TIME_MS = 8000;  // 8 seconds total (was 12)
 export const CHALLENGE_EXPIRY_MS = 60000;  // 60 seconds
 
 /**
@@ -423,7 +470,7 @@ export function generate(nonce, type) {
 }
 
 /**
- * Generate a batch of challenges
+ * Generate a batch of challenges (Burst Mode)
  * @param {string} nonce - Base nonce
  * @param {number} [count=BATCH_SIZE] - Number of challenges
  * @returns {Object} { challenges: [...], validators: [...] }
@@ -439,11 +486,13 @@ export function generateBatch(nonce, count = BATCH_SIZE) {
     // Use different nonce offset for each challenge
     const offsetNonce = nonce.slice(i * 2) + nonce.slice(0, i * 2);
     
-    // Select different type for each challenge
+    // Select different type for each challenge (ensure variety)
     let selectedType;
+    let attempts = 0;
     do {
       const seed = parseInt(offsetNonce.slice(0, 4), 16);
-      selectedType = types[(seed + i * 3) % types.length];
+      selectedType = types[(seed + i * 3 + attempts) % types.length];
+      attempts++;
     } while (usedTypes.has(selectedType) && usedTypes.size < types.length);
     usedTypes.add(selectedType);
     
