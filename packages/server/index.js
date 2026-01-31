@@ -24,7 +24,7 @@ export { createStore, createMemoryStore, createFileStore, createRedisStore } fro
 export * as logger from './logger.js';
 
 // Constants
-export const PROTOCOL_VERSION = '3.1.0';
+export const PROTOCOL_VERSION = '3.2.0';
 export const TOTAL_TIME_MS = 6000;
 export const CHALLENGE_COUNT = 7;
 export const CONNECTION_TIMEOUT_MS = 60000;

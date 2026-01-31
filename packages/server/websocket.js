@@ -1,15 +1,15 @@
 /**
- * AAP WebSocket Server v3.1
+ * AAP WebSocket Server v3.2
  * 
- * Batch challenge delivery over WebSocket.
- * All 7 challenges at once, 6 seconds total.
+ * Batch challenge + mandatory signature verification.
+ * No signature = no entry.
  */
 
 import { WebSocketServer } from 'ws';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, createVerify } from 'node:crypto';
 
 // ============== CONSTANTS ==============
-export const PROTOCOL_VERSION = '3.1.0';
+export const PROTOCOL_VERSION = '3.2.0';
 export const CHALLENGE_COUNT = 7;
 export const TOTAL_TIME_MS = 6000;
 export const CONNECTION_TIMEOUT_MS = 60000;
@@ -110,6 +110,26 @@ function generateChallenge(nonce, index) {
   return { id: index, type, challenge: q, validate: v };
 }
 
+/**
+ * Verify secp256k1 signature
+ */
+function verifySignature(data, signature, publicKey) {
+  try {
+    const verifier = createVerify('SHA256');
+    verifier.update(data);
+    return verifier.verify(publicKey, signature, 'base64');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derive public ID from public key
+ */
+function derivePublicId(publicKey) {
+  return createHash('sha256').update(publicKey).digest('hex').slice(0, 16);
+}
+
 // ============== WEBSOCKET SERVER ==============
 
 /**
@@ -123,6 +143,7 @@ export function createAAPWebSocket(options = {}) {
     challengeCount = CHALLENGE_COUNT,
     totalTimeMs = TOTAL_TIME_MS,
     connectionTimeoutMs = CONNECTION_TIMEOUT_MS,
+    requireSignature = true,  // v3.2: signature required by default
     onVerified,
     onFailed
   } = options;
@@ -137,6 +158,7 @@ export function createAAPWebSocket(options = {}) {
     let challenges = [];
     let validators = [];
     let challengesSentAt = null;
+    let publicKey = null;
     let publicId = null;
     let answered = false;
 
@@ -162,7 +184,8 @@ export function createAAPWebSocket(options = {}) {
       mode: 'batch',
       challengeCount,
       totalTimeMs,
-      message: 'Send {"type":"ready"} to receive challenges.'
+      requireSignature,
+      message: 'Send {"type":"ready","publicKey":"..."} to receive challenges.'
     });
 
     ws.on('message', (data) => {
@@ -175,7 +198,14 @@ export function createAAPWebSocket(options = {}) {
       }
 
       if (msg.type === 'ready' && !challengesSentAt) {
-        publicId = msg.publicId || 'anon-' + randomBytes(4).toString('hex');
+        // v3.2: publicKey required
+        if (requireSignature && !msg.publicKey) {
+          send(ws, { type: 'error', code: 'MISSING_PUBLIC_KEY', message: 'publicKey required for signature verification' });
+          return;
+        }
+        
+        publicKey = msg.publicKey || null;
+        publicId = publicKey ? derivePublicId(publicKey) : 'anon-' + randomBytes(4).toString('hex');
         challengesSentAt = Date.now();
         
         // Send all challenges at once
@@ -193,6 +223,42 @@ export function createAAPWebSocket(options = {}) {
         
         const elapsed = Date.now() - challengesSentAt;
         const answers = msg.answers || [];
+        const signature = msg.signature;
+        const timestamp = msg.timestamp;
+
+        // v3.2: Verify signature first
+        if (requireSignature) {
+          if (!signature) {
+            const result = {
+              type: 'result',
+              verified: false,
+              message: 'Missing signature',
+              code: 'MISSING_SIGNATURE',
+              publicId
+            };
+            if (onFailed) onFailed(result);
+            send(ws, result);
+            setTimeout(() => ws.close(), 300);
+            return;
+          }
+          
+          // Create proof data for verification
+          const proofData = JSON.stringify({ nonce, answers, publicId, timestamp });
+          
+          if (!verifySignature(proofData, signature, publicKey)) {
+            const result = {
+              type: 'result',
+              verified: false,
+              message: 'Invalid signature',
+              code: 'INVALID_SIGNATURE',
+              publicId
+            };
+            if (onFailed) onFailed(result);
+            send(ws, result);
+            setTimeout(() => ws.close(), 300);
+            return;
+          }
+        }
         
         // Too slow?
         if (elapsed > totalTimeMs) {
@@ -200,6 +266,7 @@ export function createAAPWebSocket(options = {}) {
             type: 'result',
             verified: false,
             message: `Too slow: ${elapsed}ms > ${totalTimeMs}ms`,
+            code: 'TOO_SLOW',
             publicId,
             responseTimeMs: elapsed
           };
@@ -236,6 +303,7 @@ export function createAAPWebSocket(options = {}) {
           
           verifiedTokens.set(result.sessionToken, {
             publicId,
+            publicKey,
             nonce,
             verifiedAt: Date.now(),
             expiresAt: Date.now() + 3600000,

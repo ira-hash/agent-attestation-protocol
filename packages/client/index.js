@@ -1,13 +1,38 @@
 /**
- * @aap/client v3.1.0
+ * @aap/client v3.2.0
  * 
- * WebSocket client for Agent Attestation Protocol.
- * Batch mode: receive all challenges, solve, submit.
+ * WebSocket client with mandatory signature.
+ * Proves cryptographic identity via secp256k1.
  */
 
 import WebSocket from 'ws';
+import { generateKeyPairSync, createSign, createHash, randomBytes } from 'crypto';
 
-export const PROTOCOL_VERSION = '3.1.0';
+export const PROTOCOL_VERSION = '3.2.0';
+
+/**
+ * Generate secp256k1 key pair for agent identity
+ */
+export function generateIdentity() {
+  const { publicKey, privateKey } = generateKeyPairSync('ec', {
+    namedCurve: 'secp256k1',
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+  });
+  
+  const publicId = createHash('sha256').update(publicKey).digest('hex').slice(0, 16);
+  
+  return { publicKey, privateKey, publicId };
+}
+
+/**
+ * Sign data with private key
+ */
+export function sign(data, privateKey) {
+  const signer = createSign('SHA256');
+  signer.update(data);
+  return signer.sign(privateKey, 'base64');
+}
 
 /**
  * AAP WebSocket Client
@@ -15,21 +40,26 @@ export const PROTOCOL_VERSION = '3.1.0';
 export class AAPClient {
   constructor(options = {}) {
     this.serverUrl = options.serverUrl || 'ws://localhost:3000/aap';
-    this.publicId = options.publicId || null;
+    this.identity = options.identity || generateIdentity();
     this.solver = options.solver || null;
   }
 
+  get publicKey() { return this.identity.publicKey; }
+  get publicId() { return this.identity.publicId; }
+
   /**
-   * Connect and verify
+   * Connect and verify with signature
    * @param {Function} [solver] - async (challenges) => answers[]
    * @returns {Promise<Object>} Verification result
    */
   async verify(solver) {
     const solve = solver || this.solver;
+    const { publicKey, privateKey, publicId } = this.identity;
     
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(this.serverUrl);
       let result = null;
+      let nonce = null;
 
       ws.on('open', () => {});
 
@@ -39,23 +69,41 @@ export class AAPClient {
 
           switch (msg.type) {
             case 'handshake':
+              // Send ready with public key
               ws.send(JSON.stringify({
                 type: 'ready',
-                publicId: this.publicId
+                publicKey
               }));
               break;
 
             case 'challenges':
+              nonce = msg.nonce;
+              
               if (!solve) {
-                ws.send(JSON.stringify({ type: 'answers', answers: [] }));
+                // No solver - will fail
+                const timestamp = Date.now();
+                const answers = [];
+                const proofData = JSON.stringify({ nonce, answers, publicId, timestamp });
+                const signature = sign(proofData, privateKey);
+                ws.send(JSON.stringify({ type: 'answers', answers, signature, timestamp }));
                 break;
               }
 
               try {
                 const answers = await solve(msg.challenges);
-                ws.send(JSON.stringify({ type: 'answers', answers }));
+                const timestamp = Date.now();
+                
+                // Sign the proof
+                const proofData = JSON.stringify({ nonce, answers, publicId, timestamp });
+                const signature = sign(proofData, privateKey);
+                
+                ws.send(JSON.stringify({ type: 'answers', answers, signature, timestamp }));
               } catch (e) {
-                ws.send(JSON.stringify({ type: 'answers', answers: [] }));
+                const timestamp = Date.now();
+                const answers = [];
+                const proofData = JSON.stringify({ nonce, answers, publicId, timestamp });
+                const signature = sign(proofData, privateKey);
+                ws.send(JSON.stringify({ type: 'answers', answers, signature, timestamp }));
               }
               break;
 
@@ -107,8 +155,8 @@ Respond with ONLY a JSON array like: [{...}, {...}, ...]`;
 /**
  * Quick verify helper
  */
-export async function verify(serverUrl, solver, publicId) {
-  const client = new AAPClient({ serverUrl, solver, publicId });
+export async function verify(serverUrl, solver, identity) {
+  const client = new AAPClient({ serverUrl, solver, identity });
   return client.verify();
 }
 
@@ -116,4 +164,4 @@ export function createClient(options) {
   return new AAPClient(options);
 }
 
-export default { AAPClient, createClient, createSolver, verify, PROTOCOL_VERSION };
+export default { AAPClient, createClient, createSolver, verify, generateIdentity, sign, PROTOCOL_VERSION };
