@@ -1,12 +1,13 @@
 /**
- * AAP Passport - Agent Attestation Protocol Skill
+ * AAP Passport - Agent Attestation Protocol Skill v2.5
  * 
- * Provides cryptographic identity and verification capabilities for AI agents.
+ * The Reverse Turing Test.
+ * CAPTCHAs block bots. AAP blocks humans.
  * 
  * Features:
  * - Automatic identity generation (secp256k1 key pair)
- * - Message signing and verification
- * - Challenge-Response proof generation
+ * - Batch challenge support (5 challenges, 8 seconds)
+ * - Salt injection for anti-caching
  * - Full verification flow with HTTP client
  */
 
@@ -66,26 +67,37 @@ export async function aap_sign_message({ message }) {
 
 /**
  * Tool: Generate a complete AAP proof for a server challenge
- * This is the main verification tool
+ * Supports both single and batch challenges
  * 
  * @param {Object} params
- * @param {string} params.challenge_string - The challenge prompt
+ * @param {string} [params.challenge_string] - Single challenge prompt
  * @param {string} params.nonce - Server-provided nonce
- * @param {string} [params.type] - Challenge type (poem, math, etc.)
- * @param {string} [params.solution] - Pre-generated solution (optional, for LLM-generated responses)
+ * @param {string} [params.type] - Challenge type
+ * @param {string|Array} [params.solution] - Pre-generated solution(s)
+ * @param {Array} [params.challenges] - Batch challenges array
  */
-export async function aap_generate_proof({ challenge_string, nonce, type, solution }) {
-  if (!challenge_string || !nonce) {
-    return { error: 'challenge_string and nonce are required' };
+export async function aap_generate_proof({ challenge_string, nonce, type, solution, challenges }) {
+  if (!nonce) {
+    return { error: 'nonce is required' };
+  }
+  
+  // Batch mode
+  if (challenges && Array.isArray(challenges)) {
+    const llmCallback = solution 
+      ? async () => (Array.isArray(solution) ? solution.join('\n') : solution)
+      : null;
+    
+    const proof = await prover.generateBatchProof({ nonce, challenges }, llmCallback);
+    return proof;
+  }
+  
+  // Single mode (legacy)
+  if (!challenge_string) {
+    return { error: 'challenge_string or challenges array required' };
   }
   
   const challenge = { challenge_string, nonce, type };
-  
-  // If solution is provided (from LLM), use it directly
-  const llmCallback = solution 
-    ? async () => solution
-    : null; // Use smart fallback
-  
+  const llmCallback = solution ? async () => solution : null;
   const proof = await prover.generateProof(challenge, llmCallback);
   
   return proof;

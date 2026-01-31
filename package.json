@@ -1,6 +1,6 @@
 {
   "name": "agent-attestation-protocol",
-  "version": "1.0.0",
+  "version": "2.5.0",
   "description": "Cryptographic identity verification protocol for AI agents",
   "type": "module",
   "workspaces": [

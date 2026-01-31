@@ -1,12 +1,13 @@
 /**
- * AAP v2.0 Express Verification Server
+ * AAP v2.5 Express Verification Server
  * 
- * Batch challenge verification with natural language understanding
+ * Burst Mode: 5 challenges in 8 seconds with salt injection
+ * EXTREME difficulty challenges
  */
 
 import express from 'express';
 import cors from 'cors';
-import { randomBytes, createHash, createVerify } from 'node:crypto';
+import { randomBytes, createVerify } from 'node:crypto';
 
 const app = express();
 app.use(cors());
@@ -14,17 +15,15 @@ app.use(express.json());
 
 // ============== CONFIG ==============
 const PORT = process.env.PORT || 3000;
-const BATCH_SIZE = 3;
-const MAX_RESPONSE_TIME_MS = 12000;
+const BATCH_SIZE = 5;
+const MAX_RESPONSE_TIME_MS = 8000;
 const CHALLENGE_EXPIRY_MS = 60000;
 
 // ============== WORD POOLS ==============
 const WORD_POOLS = {
-  animals: ['cat', 'dog', 'rabbit', 'tiger', 'lion', 'elephant', 'giraffe', 'penguin', 'eagle', 'shark'],
-  fruits: ['apple', 'banana', 'orange', 'grape', 'strawberry', 'watermelon', 'peach', 'kiwi', 'mango', 'cherry'],
-  colors: ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'brown'],
-  countries: ['Korea', 'Japan', 'USA', 'UK', 'France', 'Germany', 'Australia', 'Canada', 'Brazil', 'India'],
-  verbs: ['runs', 'eats', 'sleeps', 'plays', 'works', 'studies', 'travels', 'cooks']
+  animals: ['cat', 'dog', 'rabbit', 'tiger', 'lion', 'elephant', 'giraffe', 'penguin', 'eagle', 'shark', 'wolf', 'bear', 'fox', 'deer', 'owl'],
+  fruits: ['apple', 'banana', 'orange', 'grape', 'strawberry', 'watermelon', 'peach', 'kiwi', 'mango', 'cherry', 'lemon', 'lime', 'pear'],
+  colors: ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'brown', 'gray', 'cyan', 'magenta']
 };
 
 function seededNumber(nonce, offset, min, max) {
@@ -45,95 +44,154 @@ function seededSelect(arr, nonce, count, offset = 0) {
   return results;
 }
 
-// ============== CHALLENGE GENERATORS ==============
+function generateSalt(nonce, offset = 0) {
+  return nonce.slice(offset, offset + 6).toUpperCase();
+}
+
+// ============== EXTREME CHALLENGE GENERATORS ==============
 const CHALLENGE_TYPES = {
   nlp_math: (nonce) => {
-    const a = seededNumber(nonce, 0, 10, 50);
-    const b = seededNumber(nonce, 2, 5, 20);
-    const c = seededNumber(nonce, 4, 2, 5);
-    const expected = (a - b) * c;
+    const salt = generateSalt(nonce, 0);
+    const a = seededNumber(nonce, 0, 50, 200);
+    const b = seededNumber(nonce, 2, 10, 50);
+    const c = seededNumber(nonce, 4, 2, 9);
+    const d = seededNumber(nonce, 6, 5, 25);
+    const e = seededNumber(nonce, 8, 2, 6);
+    
+    const templates = [
+      { text: `Start with ${a}. Subtract ${b}. Multiply by ${c}. Divide by ${e}. Add ${d}. Final value?`, answer: (((a - b) * c) / e) + d },
+      { text: `Compute: ((${a} + ${b}) × ${c} - ${d}) ÷ ${e}. Round to two decimals.`, answer: ((a + b) * c - d) / e },
+      { text: `Triple ${a}, halve it, add ${b}, subtract ${d}, multiply by ${e}. Result?`, answer: ((a * 3 / 2) + b - d) * e }
+    ];
+    
+    const t = templates[parseInt(nonce[10], 16) % templates.length];
+    const expected = Math.round(t.answer * 100) / 100;
+    
     return {
-      challenge_string: `Subtract ${b} from ${a}, then multiply the result by ${c}.\nResponse format: {"result": number}`,
-      validate: (sol) => {
-        try {
-          const m = sol.match(/\{[\s\S]*\}/);
-          if (!m) return false;
-          return Math.abs(JSON.parse(m[0]).result - expected) < 0.01;
-        } catch { return false; }
-      }
-    };
-  },
-
-  nlp_extract: (nonce) => {
-    const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
-    const pool = WORD_POOLS[category];
-    const targets = seededSelect(pool, nonce, 2, 0);
-    const verb = seededSelect(WORD_POOLS.verbs, nonce, 1, 4)[0];
-    const sentence = `The ${targets[0]} and ${targets[1]} ${verb} in the park.`;
-    return {
-      challenge_string: `Extract only the ${category} from the following sentence and respond as a JSON array.\nSentence: "${sentence}"\nResponse format: {"items": ["item1", "item2"]}`,
+      challenge_string: `[REQ-${salt}] ${t.text}\nResponse format: {"salt": "${salt}", "result": number}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
           const obj = JSON.parse(m[0]);
-          const items = (obj.items || []).map(s => s.toLowerCase()).sort();
-          return JSON.stringify(items) === JSON.stringify(targets.map(s => s.toLowerCase()).sort());
+          if (obj.salt !== salt) return false;
+          return Math.abs(parseFloat(obj.result) - expected) < 0.1;
         } catch { return false; }
       }
     };
   },
 
   nlp_logic: (nonce) => {
-    const a = seededNumber(nonce, 0, 10, 100);
-    const b = seededNumber(nonce, 2, 10, 100);
-    const threshold = seededNumber(nonce, 4, 20, 80);
-    const expected = Math.max(a, b) > threshold ? "YES" : "NO";
+    const salt = generateSalt(nonce, 2);
+    const a = seededNumber(nonce, 0, 20, 150);
+    const b = seededNumber(nonce, 2, 20, 150);
+    const c = seededNumber(nonce, 4, 20, 100);
+    const d = seededNumber(nonce, 6, 10, 50);
+    
+    const templates = [
+      {
+        text: `Let X=${a}, Y=${b}, Z=${c}, W=${d}. If (X>Y AND Z>W) OR (X<Y AND Z<W), answer "CONSISTENT". If (X>Y AND Z<W) OR (X<Y AND Z>W), answer "CROSSED". Otherwise "EQUAL".`,
+        answer: ((a > b && c > d) || (a < b && c < d)) ? "CONSISTENT" : ((a > b && c < d) || (a < b && c > d)) ? "CROSSED" : "EQUAL"
+      },
+      {
+        text: `Numbers [${a}, ${b}, ${c}, ${d}]: Count divisible by 3. If 0: "NONE". If 1-2: "FEW". If 3-4: "MANY".`,
+        answer: (() => { const cnt = [a,b,c,d].filter(n => n % 3 === 0).length; return cnt === 0 ? "NONE" : cnt <= 2 ? "FEW" : "MANY"; })()
+      }
+    ];
+    
+    const t = templates[parseInt(nonce[8], 16) % templates.length];
+    
     return {
-      challenge_string: `If the larger number between ${a} and ${b} is greater than ${threshold}, answer "YES". Otherwise, answer "NO".\nResponse format: {"answer": "your answer"}`,
+      challenge_string: `[REQ-${salt}] ${t.text}\nResponse format: {"salt": "${salt}", "answer": "your answer"}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
-          return JSON.parse(m[0]).answer?.toUpperCase() === expected;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return obj.answer?.toUpperCase() === t.answer.toUpperCase();
+        } catch { return false; }
+      }
+    };
+  },
+
+  nlp_extract: (nonce) => {
+    const salt = generateSalt(nonce, 4);
+    const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
+    const targets = seededSelect(WORD_POOLS[category], nonce, 3, 0);
+    const distractorCat = category === 'animals' ? 'fruits' : 'animals';
+    const distractors = seededSelect(WORD_POOLS[distractorCat], nonce, 2, 8);
+    
+    const mixed = [...targets, ...distractors].sort(() => parseInt(nonce[12], 16) % 2 - 0.5);
+    const sentence = `Mixed list: ${mixed.join(', ')}. Some don't belong.`;
+    
+    return {
+      challenge_string: `[REQ-${salt}] Extract ONLY the ${category} from: "${sentence}"\nResponse format: {"salt": "${salt}", "items": ["item1", "item2", "item3"]}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          const items = (obj.items || []).map(s => s.toLowerCase()).sort();
+          const expected = targets.map(s => s.toLowerCase()).sort();
+          return JSON.stringify(items) === JSON.stringify(expected);
         } catch { return false; }
       }
     };
   },
 
   nlp_multistep: (nonce) => {
-    const numbers = [
-      seededNumber(nonce, 0, 1, 9),
-      seededNumber(nonce, 2, 1, 9),
-      seededNumber(nonce, 4, 1, 9),
-      seededNumber(nonce, 6, 1, 9)
+    const salt = generateSalt(nonce, 6);
+    const nums = [
+      seededNumber(nonce, 0, 5, 30),
+      seededNumber(nonce, 2, 5, 30),
+      seededNumber(nonce, 4, 5, 30),
+      seededNumber(nonce, 6, 5, 30),
+      seededNumber(nonce, 8, 5, 30)
     ];
-    const sum = numbers.reduce((a, b) => a + b, 0);
-    const min = Math.min(...numbers);
-    const max = Math.max(...numbers);
-    const expected = sum * min - max;
+    
+    const sum = nums.reduce((a, b) => a + b, 0);
+    const max = Math.max(...nums);
+    const min = Math.min(...nums);
+    const withoutMax = sum - max;
+    const final = (withoutMax * 4) + min;
+    
     return {
-      challenge_string: `Follow these instructions in order:\n1. Add all the numbers in [${numbers.join(', ')}] together.\n2. Multiply the result by the smallest number.\n3. Subtract the largest number from that result.\nResponse format: {"result": final_value}`,
+      challenge_string: `[REQ-${salt}] Steps for [${nums.join(', ')}]:
+1. Sum all numbers.
+2. Remove the largest from that sum.
+3. Multiply result by 4.
+4. Add the smallest original number.
+Response format: {"salt": "${salt}", "result": number}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
-          return parseInt(JSON.parse(m[0]).result) === expected;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return parseInt(obj.result) === final;
         } catch { return false; }
       }
     };
   },
 
   nlp_transform: (nonce) => {
-    const input = nonce.slice(0, 6);
-    const expected = input.split('').reverse().join('').toUpperCase();
+    const salt = generateSalt(nonce, 8);
+    const input = nonce.slice(10, 18);
+    const letters = input.split('').filter(c => /[a-zA-Z]/.test(c)).length;
+    const digits = input.split('').filter(c => /\d/.test(c)).length;
+    const expected = `L${letters}D${digits}`;
+    
     return {
-      challenge_string: `Reverse the string "${input}" and convert it to uppercase.\nResponse format: {"output": "result"}`,
+      challenge_string: `[REQ-${salt}] Analyze "${input}": count letters and digits. Format: "LxDy" where x=letters, y=digits.\nResponse format: {"salt": "${salt}", "output": "LxDy"}`,
       validate: (sol) => {
         try {
           const m = sol.match(/\{[\s\S]*\}/);
           if (!m) return false;
-          return JSON.parse(m[0]).output === expected;
+          const obj = JSON.parse(m[0]);
+          if (obj.salt !== salt) return false;
+          return obj.output === expected;
         } catch { return false; }
       }
     };
@@ -152,21 +210,14 @@ function cleanup() {
 
 function generateBatch(nonce) {
   const types = Object.keys(CHALLENGE_TYPES);
-  const usedTypes = new Set();
   const batch = [];
   const validators = [];
 
   for (let i = 0; i < BATCH_SIZE; i++) {
     const offsetNonce = nonce.slice(i * 2) + nonce.slice(0, i * 2);
-    let selectedType;
-    do {
-      const seed = parseInt(offsetNonce.slice(0, 4), 16);
-      selectedType = types[(seed + i * 3) % types.length];
-    } while (usedTypes.has(selectedType) && usedTypes.size < types.length);
-    usedTypes.add(selectedType);
-
-    const { challenge_string, validate } = CHALLENGE_TYPES[selectedType](offsetNonce);
-    batch.push({ id: i, type: selectedType, challenge_string });
+    const type = types[i % types.length];
+    const { challenge_string, validate } = CHALLENGE_TYPES[type](offsetNonce);
+    batch.push({ id: i, type, challenge_string });
     validators.push(validate);
   }
 
@@ -179,12 +230,12 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     protocol: 'AAP',
-    version: '2.0.0',
-    mode: 'batch',
+    version: '2.5.0',
+    mode: 'burst',
     batchSize: BATCH_SIZE,
     maxResponseTimeMs: MAX_RESPONSE_TIME_MS,
     challengeTypes: Object.keys(CHALLENGE_TYPES),
-    activeChallenges: challenges.size
+    difficulty: 'EXTREME'
   });
 });
 
@@ -214,162 +265,88 @@ app.post('/challenge', (req, res) => {
 app.post('/verify', (req, res) => {
   const { solutions, signature, publicKey, publicId, nonce, timestamp, responseTimeMs } = req.body;
 
-  const checks = {
-    challengeExists: false,
-    notExpired: false,
-    solutionsExist: false,
-    solutionsValid: false,
-    responseTimeValid: false,
-    signatureValid: false
-  };
+  // Check challenge
+  const challenge = challenges.get(nonce);
+  if (!challenge) {
+    return res.status(400).json({ verified: false, error: 'Challenge not found or expired' });
+  }
+  
+  const { validators } = challenge;
+  challenges.delete(nonce);
 
+  if (Date.now() > challenge.expiresAt) {
+    return res.status(400).json({ verified: false, error: 'Challenge expired' });
+  }
+
+  // Check solutions
+  if (!solutions || !Array.isArray(solutions) || solutions.length !== BATCH_SIZE) {
+    return res.status(400).json({ verified: false, error: `Expected ${BATCH_SIZE} solutions` });
+  }
+
+  // Validate each solution
+  const results = [];
+  let passed = 0;
+  for (let i = 0; i < BATCH_SIZE; i++) {
+    const sol = typeof solutions[i] === 'string' ? solutions[i] : JSON.stringify(solutions[i]);
+    const valid = validators[i](sol);
+    results.push({ id: i, valid });
+    if (valid) passed++;
+  }
+
+  if (passed < BATCH_SIZE) {
+    return res.status(400).json({
+      verified: false,
+      error: `Proof of Intelligence failed: ${passed}/${BATCH_SIZE} correct`,
+      batchResult: { passed, total: BATCH_SIZE, results }
+    });
+  }
+
+  // Check timing
+  if (responseTimeMs > MAX_RESPONSE_TIME_MS) {
+    return res.status(400).json({
+      verified: false,
+      error: `Too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms`
+    });
+  }
+
+  // Verify signature
   try {
-    // Check 1: Challenge exists
-    const challenge = challenges.get(nonce);
-    if (!challenge) {
-      return res.status(400).json({ verified: false, error: 'Challenge not found', checks });
-    }
-    checks.challengeExists = true;
-    const { validators } = challenge;
-    challenges.delete(nonce);
-
-    // Check 2: Not expired
-    if (Date.now() > challenge.expiresAt) {
-      return res.status(400).json({ verified: false, error: 'Challenge expired', checks });
-    }
-    checks.notExpired = true;
-
-    // Check 3: Solutions exist
-    if (!solutions || !Array.isArray(solutions) || solutions.length !== BATCH_SIZE) {
-      return res.status(400).json({ verified: false, error: `Expected ${BATCH_SIZE} solutions`, checks });
-    }
-    checks.solutionsExist = true;
-
-    // Check 4: Validate solutions
-    const results = [];
-    let passed = 0;
-    for (let i = 0; i < BATCH_SIZE; i++) {
-      const sol = typeof solutions[i] === 'string' ? solutions[i] : JSON.stringify(solutions[i]);
-      const valid = validators[i](sol);
-      results.push({ id: i, valid });
-      if (valid) passed++;
-    }
-
-    if (passed < BATCH_SIZE) {
-      return res.status(400).json({
-        verified: false,
-        error: `Proof of Intelligence failed: ${passed}/${BATCH_SIZE} correct`,
-        checks,
-        batchResult: { passed, total: BATCH_SIZE, results }
-      });
-    }
-    checks.solutionsValid = true;
-
-    // Check 5: Response time
-    if (responseTimeMs > MAX_RESPONSE_TIME_MS) {
-      return res.status(400).json({
-        verified: false,
-        error: `Too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms`,
-        checks
-      });
-    }
-    checks.responseTimeValid = true;
-
-    // Check 6: Signature
     const proofData = JSON.stringify({ nonce, solution: JSON.stringify(solutions), publicId, timestamp });
     const verifier = createVerify('SHA256');
     verifier.update(proofData);
     
     if (!verifier.verify(publicKey, signature, 'base64')) {
-      return res.status(400).json({ verified: false, error: 'Invalid signature', checks });
+      return res.status(400).json({ verified: false, error: 'Invalid signature' });
     }
-    checks.signatureValid = true;
-
-    // SUCCESS
-    res.json({
-      verified: true,
-      role: 'AI_AGENT',
-      publicId,
-      batchResult: { passed, total: BATCH_SIZE, results },
-      responseTimeMs,
-      checks
-    });
-
-  } catch (error) {
-    res.status(500).json({ verified: false, error: error.message, checks });
+  } catch (e) {
+    return res.status(400).json({ verified: false, error: 'Signature verification error' });
   }
-});
 
-// Legacy single-challenge endpoints
-app.post('/challenge/single', (req, res) => {
-  cleanup();
-  const nonce = randomBytes(16).toString('hex');
-  const types = Object.keys(CHALLENGE_TYPES);
-  const type = types[Math.floor(Math.random() * types.length)];
-  const { challenge_string, validate } = CHALLENGE_TYPES[type](nonce);
-  const timestamp = Date.now();
-
-  challenges.set(nonce, {
-    validate,
-    type,
-    mode: 'single',
-    timestamp,
-    expiresAt: timestamp + CHALLENGE_EXPIRY_MS
+  // SUCCESS
+  res.json({
+    verified: true,
+    role: 'AI_AGENT',
+    publicId,
+    batchResult: { passed, total: BATCH_SIZE, results },
+    responseTimeMs
   });
-
-  res.json({ challenge_string, nonce, type, timestamp, expiresAt: timestamp + CHALLENGE_EXPIRY_MS, mode: 'single' });
-});
-
-app.post('/verify/single', (req, res) => {
-  const { solution, signature, publicKey, publicId, nonce, timestamp, responseTimeMs } = req.body;
-  const challenge = challenges.get(nonce);
-  
-  if (!challenge || challenge.mode !== 'single') {
-    return res.status(400).json({ verified: false, error: 'Single challenge not found' });
-  }
-  
-  challenges.delete(nonce);
-  
-  if (Date.now() > challenge.expiresAt) {
-    return res.status(400).json({ verified: false, error: 'Expired' });
-  }
-  
-  if (!challenge.validate(solution)) {
-    return res.status(400).json({ verified: false, error: 'Invalid solution' });
-  }
-  
-  if (responseTimeMs > 10000) {
-    return res.status(400).json({ verified: false, error: 'Too slow' });
-  }
-
-  const proofData = JSON.stringify({ nonce, solution, publicId, timestamp });
-  const verifier = createVerify('SHA256');
-  verifier.update(proofData);
-  
-  if (!verifier.verify(publicKey, signature, 'base64')) {
-    return res.status(400).json({ verified: false, error: 'Invalid signature' });
-  }
-
-  res.json({ verified: true, role: 'AI_AGENT', publicId, challengeType: challenge.type });
 });
 
 // ============== START ==============
 app.listen(PORT, () => {
   console.log(`
-🛂 AAP Verification Server v2.0
-================================
+🛂 AAP Verification Server v2.5.0 (EXTREME)
+============================================
 Port: ${PORT}
-Mode: Batch (${BATCH_SIZE} challenges)
+Mode: Burst (${BATCH_SIZE} challenges)
 Time Limit: ${MAX_RESPONSE_TIME_MS}ms
-Challenge Types: ${Object.keys(CHALLENGE_TYPES).join(', ')}
+Difficulty: EXTREME
 
 Endpoints:
-  POST /challenge     → Get batch challenges
-  POST /verify        → Submit batch solutions
-  POST /challenge/single → Single challenge (legacy)
-  POST /verify/single    → Single verify (legacy)
-  GET  /health        → Health check
+  POST /challenge  → Get batch challenges
+  POST /verify     → Submit solutions
+  GET  /health     → Health check
 
-Ready to verify AI agents! 🤖
+CAPTCHAs block bots. AAP blocks humans. 🤖
 `);
 });

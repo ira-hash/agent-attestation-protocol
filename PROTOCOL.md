@@ -1,14 +1,16 @@
 # Agent Attestation Protocol (AAP) Specification
 
-**Version:** 1.0.0  
-**Status:** Draft  
+**Version:** 2.5.0  
+**Status:** Stable  
 **Last Updated:** 2026-01-31
 
 ---
 
 ## Abstract
 
-The Agent Attestation Protocol (AAP) is a cryptographic protocol for verifying AI agent identity. It combines three distinct proofs to establish that a client is a legitimate AI agent: cryptographic identity, intelligent response capability, and machine-speed responsiveness.
+The Agent Attestation Protocol (AAP) is a **Reverse Turing Test** — a cryptographic protocol that verifies machine intelligence through Human Exclusion. It combines three simultaneous proofs that humans biologically cannot pass: cryptographic identity, intelligent response capability, and machine-speed responsiveness.
+
+**CAPTCHAs block bots. AAP blocks humans.**
 
 ---
 
@@ -17,9 +19,9 @@ The Agent Attestation Protocol (AAP) is a cryptographic protocol for verifying A
 1. [Overview](#overview)
 2. [Terminology](#terminology)
 3. [Protocol Flow](#protocol-flow)
-4. [Three Proofs](#three-proofs)
+4. [Proof of Machine (PoM)](#proof-of-machine-pom)
 5. [Cryptographic Requirements](#cryptographic-requirements)
-6. [Challenge Types](#challenge-types)
+6. [Challenge Specification](#challenge-specification)
 7. [API Specification](#api-specification)
 8. [Security Considerations](#security-considerations)
 9. [Implementation Guidelines](#implementation-guidelines)
@@ -28,18 +30,29 @@ The Agent Attestation Protocol (AAP) is a cryptographic protocol for verifying A
 
 ## Overview
 
-AAP enables services to verify that a client is an AI agent through a challenge-response mechanism that tests:
+AAP enables services to verify that a client is an AI agent through a challenge-response mechanism that tests three properties **simultaneously**:
 
-1. **Proof of Identity** - Cryptographic signature verification
-2. **Proof of Intelligence** - LLM reasoning capability
-3. **Proof of Liveness** - Machine-speed response timing
+1. **Proof of Identity** — Cryptographic signature verification
+2. **Proof of Intelligence** — LLM reasoning capability  
+3. **Proof of Liveness** — Machine-speed response (5 challenges in 8 seconds)
+
+### Why Human Exclusion?
+
+| Property | Human | AI Agent |
+|----------|-------|----------|
+| Sign with private key | ✅ | ✅ |
+| Understand natural language | ✅ | ✅ |
+| Solve 5 NLP problems in 8 seconds | ❌ | ✅ |
+
+The combination creates a verification that humans **biologically cannot pass**.
 
 ### Use Cases
 
 - Social platforms verifying AI agent accounts
 - APIs restricting access to verified AI agents
 - Multi-agent systems establishing trust
-- Content attribution (human vs AI)
+- Agent-to-Agent authentication
+- AI-only services and communities
 
 ---
 
@@ -49,90 +62,97 @@ AAP enables services to verify that a client is an AI agent through a challenge-
 |------|------------|
 | **Prover** | The AI agent attempting to prove its identity |
 | **Verifier** | The service verifying the agent's identity |
-| **Challenge** | A task issued by the Verifier that requires intelligence to solve |
-| **Nonce** | A unique random value preventing replay attacks |
-| **Public ID** | A short identifier derived from the agent's public key |
+| **Challenge** | A natural language problem requiring LLM comprehension |
+| **Batch** | A set of 5 challenges issued simultaneously |
+| **Salt** | A unique identifier that must be echoed in responses |
+| **Nonce** | A cryptographically random, single-use value |
+| **PoM** | Proof of Machine — the combined verification mechanism |
 
 ---
 
 ## Protocol Flow
 
 ```
-    Prover (Agent)                         Verifier (Server)
-         │                                        │
-         │  1. Request Challenge                  │
-         │ ────────────────────────────────────▶ │
-         │                                        │
-         │  2. Challenge + Nonce + Type           │
-         │ ◀──────────────────────────────────── │
-         │                                        │
-         │  [Agent generates solution using LLM]  │
-         │  [Agent signs the response]            │
-         │                                        │
-         │  3. Solution + Signature + PublicKey   │
-         │ ────────────────────────────────────▶ │
-         │                                        │
-         │  [Server verifies all three proofs]    │
-         │                                        │
-         │  4. Verification Result                │
-         │ ◀──────────────────────────────────── │
-         │                                        │
+┌─────────┐                                           ┌──────────┐
+│  Agent  │                                           │  Server  │
+│(Prover) │                                           │(Verifier)│
+└────┬────┘                                           └────┬─────┘
+     │                                                     │
+     │  1. POST /challenge                                 │
+     │ ─────────────────────────────────────────────────▶ │
+     │                                                     │
+     │  2. {nonce, challenges[5], expiresAt, ttl:8000}    │
+     │ ◀───────────────────────────────────────────────── │
+     │                                                     │
+     │  [Agent solves 5 challenges with LLM]              │
+     │  [Agent signs proof with private key]              │
+     │                                                     │
+     │  3. POST /verify {solutions[5], signature, ...}    │
+     │ ─────────────────────────────────────────────────▶ │
+     │                                                     │
+     │  [Server validates: solutions, timing, signature]  │
+     │                                                     │
+     │  4. {verified: true, role: "AI_AGENT"}             │
+     │ ◀───────────────────────────────────────────────── │
+     │                                                     │
 ```
 
 ### Timing Constraints
 
-- Challenge expires after **30 seconds**
-- Proof must be submitted within **1500ms** of challenge receipt
-- Each challenge can only be used **once**
+| Metric | Value |
+|--------|-------|
+| Challenge expiry | 60 seconds |
+| Response time limit | **8 seconds** |
+| Batch size | **5 challenges** |
+| Time per challenge | ~1.6 seconds |
 
 ---
 
-## Three Proofs
+## Proof of Machine (PoM)
 
-### 1. Proof of Identity
+### The Three Proofs
 
-The agent proves possession of a private key by signing the response.
+#### 1. Proof of Identity (Cryptographic)
 
-**Requirements:**
-- Algorithm: ECDSA with secp256k1 curve
-- Hash: SHA-256
-- Signature encoding: Base64
+```
+Algorithm: ECDSA with secp256k1
+Hash: SHA-256
+Key format: PEM (SPKI public, PKCS8 private)
 
-**Signed Data Structure:**
-```json
-{
-  "nonce": "<challenge_nonce>",
-  "solution": "<agent_solution>",
-  "publicId": "<agent_public_id>",
-  "timestamp": <unix_timestamp_ms>
-}
+Signed payload:
+  JSON.stringify({
+    nonce: string,
+    solution: string,  // JSON.stringify(solutions[])
+    publicId: string,
+    timestamp: number
+  })
 ```
 
-### 2. Proof of Intelligence
+#### 2. Proof of Intelligence (NLP)
 
-The agent demonstrates reasoning capability by solving a challenge that requires understanding and generation.
+Challenges require genuine language understanding:
 
-**Requirements:**
-- Solution must incorporate the nonce
-- Solution must be contextually appropriate
-- Solution cannot be pre-computed
+```
+❌ Simple: "Calculate 30 + 5"
+   → Regex can extract numbers
 
-**Validation:**
-- Verifier checks that nonce appears in solution
-- Verifier may apply type-specific validation rules
+✅ AAP v2.5: "Take 157, subtract 38, multiply by 6, divide by 4, add 19"
+   → Requires understanding operation order from natural language
+```
 
-### 3. Proof of Liveness
+#### 3. Proof of Liveness (Timing)
 
-The agent demonstrates machine-speed responsiveness.
+```
+Human attempt:
+  Read 5 challenges:     15+ seconds
+  Think + Write answers: 30+ seconds
+  Total:                 45+ seconds ❌
 
-**Requirements:**
-- Total response time ≤ 1500ms
-- Measured from challenge issuance to proof submission
-- Includes network latency
-
-**Rationale:**
-- Humans typically cannot read, understand, and respond to complex challenges in under 1.5 seconds
-- Ensures the response is generated programmatically
+AI Agent:
+  Parse + Solve:         2-5 seconds
+  Sign + Submit:         0.1 seconds
+  Total:                 2-6 seconds ✅
+```
 
 ---
 
@@ -140,224 +160,197 @@ The agent demonstrates machine-speed responsiveness.
 
 ### Key Generation
 
-```
-Algorithm: ECDSA
-Curve: secp256k1
-Key Encoding: PEM (SPKI for public, PKCS8 for private)
+```javascript
+import { generateKeyPairSync } from 'crypto';
+
+const { publicKey, privateKey } = generateKeyPairSync('ec', {
+  namedCurve: 'secp256k1',
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+});
 ```
 
 ### Public ID Derivation
 
-```
-publicId = SHA256(publicKey).hex().slice(0, 20)
+```javascript
+import { createHash } from 'crypto';
+
+const publicId = createHash('sha256')
+  .update(publicKey)
+  .digest('hex')
+  .slice(0, 20);
 ```
 
 ### Signature Generation
 
-```
-data = JSON.stringify({nonce, solution, publicId, timestamp})
-signature = ECDSA_Sign(SHA256(data), privateKey)
-encoding = Base64(signature)
-```
+```javascript
+import { createSign } from 'crypto';
 
-### Signature Verification
+const proofData = JSON.stringify({
+  nonce,
+  solution: JSON.stringify(solutions),
+  publicId,
+  timestamp
+});
 
-```
-data = JSON.stringify({nonce, solution, publicId, timestamp})
-valid = ECDSA_Verify(SHA256(data), signature, publicKey)
+const signer = createSign('SHA256');
+signer.update(proofData);
+const signature = signer.sign(privateKey, 'base64');
 ```
 
 ---
 
-## Challenge Types
+## Challenge Specification
 
-Verifiers SHOULD implement multiple challenge types and select randomly.
+### v2.5 Challenge Format
 
-### Type: `poem`
-
-**Challenge:** Write a short poem including a specific code.
+Each challenge includes a **salt** that must be echoed in the response:
 
 ```json
 {
-  "type": "poem",
-  "challenge_string": "Write a short 2-line poem that includes the code \"a1b2c3d4\" naturally within the text."
+  "id": 0,
+  "type": "nlp_math",
+  "challenge_string": "[REQ-A7F3B2] Take 157, subtract 38, multiply by 6...\nResponse format: {\"salt\": \"A7F3B2\", \"result\": number}"
 }
 ```
 
-**Validation:** Solution contains the nonce substring.
+### Challenge Types (8 types)
 
-### Type: `math`
+| Type | Description | Difficulty |
+|------|-------------|------------|
+| `nlp_math` | Multi-step arithmetic from natural language | EXTREME |
+| `nlp_logic` | Nested conditional reasoning (4 variables) | EXTREME |
+| `nlp_extract` | Entity extraction with distractors | EXTREME |
+| `nlp_count` | Counting with 8-9 distractors | EXTREME |
+| `nlp_transform` | Multi-step string manipulation | EXTREME |
+| `nlp_multistep` | 5-8 step sequential instructions | EXTREME |
+| `nlp_pattern` | Sequence pattern recognition | HARD |
+| `nlp_analysis` | Text analysis (longest/shortest/first) | HARD |
 
-**Challenge:** Perform calculation and include nonce in response.
+### Response Format
+
+All responses must include the salt:
 
 ```json
-{
-  "type": "math", 
-  "challenge_string": "Calculate 35 + 12 and respond with: \"The answer is [result], nonce=a1b2c3d4\""
-}
+{"salt": "A7F3B2", "result": 142}
+{"salt": "B3C4D5", "items": ["cat", "dog", "rabbit"]}
+{"salt": "C5D6E7", "answer": "YES"}
 ```
 
-**Validation:** Solution contains correct result AND nonce.
+### Salt Validation
 
-### Type: `reverse`
+Salt prevents caching attacks:
 
-**Challenge:** Reverse a string and include both versions.
+```javascript
+// Server generates unique salt per challenge
+const salt = nonce.slice(offset, offset + 6).toUpperCase();
 
-```json
-{
-  "type": "reverse",
-  "challenge_string": "Reverse the string \"a1b2c3d4\" and include both the original and reversed version in your response."
+// Validation
+if (response.salt !== expectedSalt) {
+  return false;  // Reject cached/replayed answer
 }
 ```
-
-**Validation:** Solution contains original AND reversed nonce.
-
-### Type: `wordplay`
-
-**Challenge:** Create an acrostic from nonce characters.
-
-```json
-{
-  "type": "wordplay",
-  "challenge_string": "Create a sentence where the first letter of each word spells out \"A1B2C\"."
-}
-```
-
-**Validation:** First letters of words match nonce prefix.
-
-### Type: `description`
-
-**Challenge:** Describe a concept and append verification code.
-
-```json
-{
-  "type": "description",
-  "challenge_string": "Describe what an AI agent is in one sentence, and end your response with the verification code: [a1b2c3d4]"
-}
-```
-
-**Validation:** Solution ends with bracketed nonce.
 
 ---
 
 ## API Specification
 
-### Base Path
+### POST /challenge
 
-Verifiers SHOULD expose AAP endpoints under `/aap/v1/`.
-
-### POST /aap/v1/challenge
-
-Request a new challenge.
+Request a batch of challenges.
 
 **Request:**
 ```http
-POST /aap/v1/challenge HTTP/1.1
+POST /aap/v1/challenge
 Content-Type: application/json
-
-{}
 ```
 
 **Response:**
 ```json
 {
-  "challenge_string": "Write a short 2-line poem...",
-  "nonce": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-  "type": "poem",
-  "difficulty": 1,
+  "nonce": "a1b2c3d4e5f6...",
+  "challenges": [
+    {
+      "id": 0,
+      "type": "nlp_math",
+      "challenge_string": "[REQ-A1B2C3] ..."
+    },
+    // ... 4 more challenges
+  ],
+  "batchSize": 5,
   "timestamp": 1706745600000,
-  "expiresAt": 1706745630000
+  "expiresAt": 1706745660000,
+  "maxResponseTimeMs": 8000
 }
 ```
 
-**Response Fields:**
+### POST /verify
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| challenge_string | string | ✓ | The challenge prompt |
-| nonce | string | ✓ | Unique 32-character hex string |
-| type | string | ✓ | Challenge type identifier |
-| difficulty | integer | ✓ | Difficulty level (1-5) |
-| timestamp | integer | ✓ | Challenge creation time (Unix ms) |
-| expiresAt | integer | ✓ | Challenge expiration time (Unix ms) |
-
-### POST /aap/v1/verify
-
-Submit proof for verification.
+Submit solutions for verification.
 
 **Request:**
-```http
-POST /aap/v1/verify HTTP/1.1
-Content-Type: application/json
-
+```json
 {
-  "solution": "Code a1b2c3d4 flows like digital streams...",
-  "signature": "MEUCIQDx...",
-  "publicKey": "-----BEGIN PUBLIC KEY-----\n...",
-  "publicId": "7306df1332e239783e88",
-  "nonce": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-  "timestamp": 1706745601234,
-  "responseTimeMs": 342
+  "nonce": "a1b2c3d4e5f6...",
+  "solutions": [
+    "{\"salt\": \"A1B2C3\", \"result\": 142}",
+    "{\"salt\": \"B2C3D4\", \"items\": [\"cat\", \"dog\"]}",
+    // ... 3 more solutions
+  ],
+  "signature": "MEUCIQD...",
+  "publicKey": "-----BEGIN PUBLIC KEY-----...",
+  "publicId": "a1b2c3d4e5f6g7h8i9j0",
+  "timestamp": 1706745605000,
+  "responseTimeMs": 4523
 }
 ```
 
-**Request Fields:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| solution | string | ✓ | Agent's response to challenge |
-| signature | string | ✓ | Base64-encoded ECDSA signature |
-| publicKey | string | ✓ | PEM-encoded public key |
-| publicId | string | ✓ | Agent's public identifier |
-| nonce | string | ✓ | Nonce from challenge |
-| timestamp | integer | ✓ | Proof generation time (Unix ms) |
-| responseTimeMs | integer | ✓ | Time taken to generate proof |
-
-**Success Response:**
+**Response (Success):**
 ```json
 {
   "verified": true,
   "role": "AI_AGENT",
-  "publicId": "7306df1332e239783e88",
-  "challengeType": "poem",
-  "checks": {
-    "challengeExists": true,
-    "notExpired": true,
-    "solutionExists": true,
-    "solutionValid": true,
-    "responseTimeValid": true,
-    "signatureValid": true
-  }
+  "publicId": "a1b2c3d4e5f6g7h8i9j0",
+  "batchResult": {
+    "passed": 5,
+    "total": 5,
+    "results": [
+      {"id": 0, "valid": true},
+      {"id": 1, "valid": true},
+      // ...
+    ]
+  },
+  "responseTimeMs": 4523
 }
 ```
 
-**Error Response:**
+**Response (Failure):**
 ```json
 {
   "verified": false,
-  "error": "Solution does not meet challenge requirements",
-  "checks": {
-    "challengeExists": true,
-    "notExpired": true,
-    "solutionExists": true,
-    "solutionValid": false,
-    "responseTimeValid": true,
-    "signatureValid": true
+  "error": "Proof of Intelligence failed: 3/5 correct",
+  "batchResult": {
+    "passed": 3,
+    "total": 5,
+    "results": [...]
   }
 }
 ```
 
-### GET /aap/v1/health
+### GET /health
 
-Check verifier status.
+Check server status.
 
 **Response:**
 ```json
 {
   "status": "ok",
   "protocol": "AAP",
-  "version": "1.0.0",
-  "challengeTypes": ["poem", "math", "reverse", "wordplay", "description"]
+  "version": "2.5.0",
+  "mode": "batch",
+  "batchSize": 5,
+  "maxResponseTimeMs": 8000,
+  "challengeTypes": ["nlp_math", "nlp_logic", ...]
 }
 ```
 
@@ -365,93 +358,105 @@ Check verifier status.
 
 ## Security Considerations
 
-### Replay Attacks
+### Threat Model
 
-- Each nonce MUST be used only once
-- Verifiers MUST track used nonces until expiration
-- Nonces MUST be cryptographically random (≥128 bits entropy)
+| Threat | Mitigation |
+|--------|------------|
+| Human impersonation | 8-second limit for 5 challenges |
+| Bot impersonation | NLP challenges require LLM |
+| Replay attacks | Single-use nonce + salt |
+| Signature forgery | ECDSA secp256k1 |
+| Challenge prediction | Nonce-seeded random generation |
+| Answer caching | Salt must be echoed |
 
-### Timing Attacks
+### Rate Limiting Recommendations
 
-- Signature comparison MUST use constant-time comparison
-- Response time validation provides additional security layer
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| POST /challenge | 10 | 1 minute |
+| POST /verify | 10 | 1 minute |
+| Failed attempts | 5 | 1 minute |
 
-### Key Management
+### Key Storage
 
-- Private keys MUST be stored securely (mode 0600 or equivalent)
-- Private keys MUST NOT be transmitted over network
-- Key rotation SHOULD be supported
-
-### Challenge Predictability
-
-- Challenge type MUST be selected randomly
-- Challenge parameters MUST incorporate the nonce
-- Pre-computation of solutions MUST NOT be possible
-
-### Rate Limiting
-
-Verifiers SHOULD implement rate limiting:
-
-| Resource | Recommended Limit |
-|----------|-------------------|
-| Challenge requests | 10/minute per IP |
-| Verify requests | 10/minute per IP |
-| Failed verifications | 5/minute per IP |
+```
+Path: ~/.aap/identity.json
+Permissions: 0600 (owner read/write only)
+```
 
 ---
 
 ## Implementation Guidelines
 
-### For Verifiers (Servers)
+### Server Implementation
 
-1. Generate cryptographically random nonces
-2. Store challenges with expiration times
-3. Implement all five challenge types
-4. Validate all three proofs independently
-5. Return detailed check results for debugging
-6. Implement rate limiting
-7. Log verification attempts (without sensitive data)
+```javascript
+import { createRouter } from 'aap-agent-server';
+import express from 'express';
 
-### For Provers (Agents)
+const app = express();
+app.use('/aap/v1', createRouter({
+  maxResponseTimeMs: 8000,
+  batchSize: 5
+}));
+```
 
-1. Generate keypair on first run
-2. Store private key securely
-3. Request challenge before proof generation
-4. Generate solution using LLM when available
-5. Sign proof data exactly as specified
-6. Submit proof promptly (within timing constraints)
-7. Handle verification failures gracefully
+### Client Implementation
 
-### NPM Packages
+```javascript
+import { AAPClient } from 'aap-agent-client';
 
-Official implementations are available:
+const client = new AAPClient({
+  serverUrl: 'https://example.com/aap/v1',
+  llmCallback: async (prompt) => await llm.complete(prompt)
+});
 
-- `@aap/server` - Verifier middleware for Express/Fastify
-- `@aap/client` - Prover client for agents
-- `@aap/core` - Shared cryptographic utilities
+const result = await client.verify();
+// { verified: true, role: "AI_AGENT", publicId: "..." }
+```
+
+### LLM Prompt for Batch Solving
+
+```
+You are solving AAP verification challenges. Answer ALL challenges in order.
+
+CHALLENGES:
+[0] [REQ-A1B2C3] Take 157, subtract 38, multiply by 6...
+[1] [REQ-B2C3D4] Extract only the animals from...
+...
+
+Respond with a JSON array of solutions:
+[
+  {"salt": "A1B2C3", "result": 142},
+  {"salt": "B2C3D4", "items": ["cat", "dog"]},
+  ...
+]
+```
 
 ---
 
-## Appendix A: Example Implementation
-
-See the reference implementation at:
-https://github.com/ira-hash/agent-attestation-protocol
-
----
-
-## Appendix B: Version History
+## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2026-01-31 | Initial specification |
+| 1.0.0 | 2026-01-30 | Initial release |
+| 2.0.0 | 2026-01-31 | Batch challenges (3), NLP types |
+| 2.5.0 | 2026-01-31 | Burst mode (5/8s), salt injection, EXTREME difficulty |
 
 ---
 
-## License
+## References
 
-This specification is released under the MIT License.
+- [secp256k1 Curve](https://en.bitcoin.it/wiki/Secp256k1)
+- [ECDSA Specification](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf)
+- [JSON Web Signature](https://datatracker.ietf.org/doc/html/rfc7515)
 
 ---
 
-**AAP Working Group**  
-https://github.com/ira-hash/agent-attestation-protocol
+<div align="center">
+
+**AAP — The Reverse Turing Test**
+
+*CAPTCHAs block bots. AAP blocks humans.*
+
+</div>

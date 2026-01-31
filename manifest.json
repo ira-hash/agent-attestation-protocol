@@ -1,6 +1,6 @@
 {
   "name": "aap-passport",
-  "version": "1.0.0",
+  "version": "2.5.0",
   "description": "Agent Attestation Protocol (AAP) identity and verification skill - cryptographic proof of AI agent identity",
   "author": "ira-hash",
   "license": "MIT",
