@@ -14,14 +14,18 @@ import identity from './identity.js';
 
 export { crypto, identity };
 
-// Protocol constants
-export const PROTOCOL_VERSION = '1.0.0';
-export const DEFAULT_CHALLENGE_EXPIRY_MS = 30000;
-export const DEFAULT_MAX_RESPONSE_TIME_MS = 1500;
+// Protocol constants (v2.5.0)
+export const PROTOCOL_VERSION = '2.5.0';
+export const DEFAULT_CHALLENGE_EXPIRY_MS = 60000;
+export const DEFAULT_MAX_RESPONSE_TIME_MS = 8000;
 export const NONCE_BYTES = 16;
+export const BATCH_SIZE = 5;
 
-// Challenge types
-export const CHALLENGE_TYPES = ['poem', 'math', 'reverse', 'wordplay', 'description'];
+// Challenge types (v2.5)
+export const CHALLENGE_TYPES = [
+  'nlp_math', 'nlp_logic', 'nlp_extract', 'nlp_count',
+  'nlp_transform', 'nlp_multistep', 'nlp_pattern', 'nlp_analysis'
+];
 
 export default {
   ...crypto,

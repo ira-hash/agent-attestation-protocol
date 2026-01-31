@@ -38,7 +38,8 @@ export function aapMiddleware(options = {}) {
     onFailed
   } = options;
 
-  // In-memory challenge store
+  // In-memory challenge store with size limit (DoS protection)
+  const MAX_CHALLENGES = 10000;
   const challenges = new Map();
 
   // Cleanup expired challenges periodically
@@ -48,6 +49,15 @@ export function aapMiddleware(options = {}) {
       if (now > challenge.expiresAt) {
         challenges.delete(nonce);
       }
+    }
+    
+    // Emergency cleanup if still too many (keep newest)
+    if (challenges.size > MAX_CHALLENGES) {
+      const entries = [...challenges.entries()]
+        .sort((a, b) => b[1].timestamp - a[1].timestamp)
+        .slice(0, MAX_CHALLENGES / 2);
+      challenges.clear();
+      entries.forEach(([k, v]) => challenges.set(k, v));
     }
   };
 
@@ -121,6 +131,7 @@ export function aapMiddleware(options = {}) {
       } = req.body;
 
       const checks = {
+        inputValid: false,
         challengeExists: false,
         notExpired: false,
         solutionsExist: false,
@@ -130,7 +141,28 @@ export function aapMiddleware(options = {}) {
       };
 
       try {
-        // Check 1: Challenge exists
+        // Check 0: Input validation (security)
+        if (!nonce || typeof nonce !== 'string' || nonce.length !== 32) {
+          return res.status(400).json({ verified: false, error: 'Invalid nonce format', checks });
+        }
+        if (!publicId || typeof publicId !== 'string' || publicId.length !== 20) {
+          return res.status(400).json({ verified: false, error: 'Invalid publicId format', checks });
+        }
+        if (!signature || typeof signature !== 'string' || signature.length < 50) {
+          return res.status(400).json({ verified: false, error: 'Invalid signature format', checks });
+        }
+        if (!publicKey || typeof publicKey !== 'string' || !publicKey.includes('BEGIN PUBLIC KEY')) {
+          return res.status(400).json({ verified: false, error: 'Invalid publicKey format', checks });
+        }
+        if (!timestamp || typeof timestamp !== 'number') {
+          return res.status(400).json({ verified: false, error: 'Invalid timestamp', checks });
+        }
+        if (!responseTimeMs || typeof responseTimeMs !== 'number' || responseTimeMs < 0) {
+          return res.status(400).json({ verified: false, error: 'Invalid responseTimeMs', checks });
+        }
+        checks.inputValid = true;
+
+        // Check 1: Challenge exists (check BEFORE delete for race condition fix)
         const challenge = challenges.get(nonce);
         if (!challenge) {
           if (onFailed) onFailed({ error: 'Challenge not found', checks }, req);
@@ -142,12 +174,9 @@ export function aapMiddleware(options = {}) {
         }
         checks.challengeExists = true;
 
-        // Remove challenge (one-time use)
-        const { validators, batchSize: size } = challenge;
-        challenges.delete(nonce);
-
-        // Check 2: Not expired
+        // Check 2: Not expired (check BEFORE delete - race condition fix)
         if (Date.now() > challenge.expiresAt) {
+          challenges.delete(nonce);  // Clean up expired
           if (onFailed) onFailed({ error: 'Challenge expired', checks }, req);
           return res.status(400).json({
             verified: false,
@@ -156,6 +185,10 @@ export function aapMiddleware(options = {}) {
           });
         }
         checks.notExpired = true;
+
+        // Remove challenge (one-time use) - only after expiry check
+        const { validators, batchSize: size } = challenge;
+        challenges.delete(nonce);
 
         // Check 3: Solutions exist
         if (!solutions || !Array.isArray(solutions) || solutions.length !== size) {
@@ -361,8 +394,14 @@ export function aapMiddleware(options = {}) {
  * const app = express();
  * app.use('/aap/v1', createRouter());
  */
-export function createRouter(options = {}) {
-  const express = require('express');
+export async function createRouter(options = {}) {
+  // Dynamic import for optional express dependency
+  let express;
+  try {
+    express = (await import('express')).default;
+  } catch {
+    throw new Error('express is required for createRouter. Install with: npm install express');
+  }
   const router = express.Router();
   router.use(express.json());
   

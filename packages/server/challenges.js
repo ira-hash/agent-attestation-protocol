@@ -381,7 +381,7 @@ Response format: {"salt": "${salt}", "count": number}`,
             
             if (obj.salt !== salt) return false;
             
-            return parseInt(obj.count) === count1;
+            return parseInt(obj.count) === targetCount;
           } catch { return false; }
         }
       };

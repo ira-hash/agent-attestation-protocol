@@ -10,8 +10,24 @@ import cors from 'cors';
 import { randomBytes, createVerify } from 'node:crypto';
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  next();
+});
+
+// CORS with restrictions
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
+
+// Body parser with size limit (DoS protection)
+app.use(express.json({ limit: '10kb' }));
 
 // ============== CONFIG ==============
 const PORT = process.env.PORT || 3000;
@@ -198,13 +214,22 @@ Response format: {"salt": "${salt}", "result": number}`,
   }
 };
 
-// ============== STORAGE ==============
+// ============== STORAGE (with DoS protection) ==============
+const MAX_CHALLENGES = 10000;
 const challenges = new Map();
 
 function cleanup() {
   const now = Date.now();
   for (const [nonce, data] of challenges.entries()) {
     if (now > data.expiresAt) challenges.delete(nonce);
+  }
+  // Emergency cleanup if too many
+  if (challenges.size > MAX_CHALLENGES) {
+    const entries = [...challenges.entries()]
+      .sort((a, b) => b[1].timestamp - a[1].timestamp)
+      .slice(0, MAX_CHALLENGES / 2);
+    challenges.clear();
+    entries.forEach(([k, v]) => challenges.set(k, v));
   }
 }
 
@@ -265,18 +290,35 @@ app.post('/challenge', (req, res) => {
 app.post('/verify', (req, res) => {
   const { solutions, signature, publicKey, publicId, nonce, timestamp, responseTimeMs } = req.body;
 
-  // Check challenge
+  // Input validation (security)
+  if (!nonce || typeof nonce !== 'string' || nonce.length !== 32) {
+    return res.status(400).json({ verified: false, error: 'Invalid nonce format' });
+  }
+  if (!publicId || typeof publicId !== 'string' || publicId.length !== 20) {
+    return res.status(400).json({ verified: false, error: 'Invalid publicId format' });
+  }
+  if (!signature || typeof signature !== 'string' || signature.length < 50) {
+    return res.status(400).json({ verified: false, error: 'Invalid signature format' });
+  }
+  if (!publicKey || typeof publicKey !== 'string' || !publicKey.includes('BEGIN PUBLIC KEY')) {
+    return res.status(400).json({ verified: false, error: 'Invalid publicKey format' });
+  }
+
+  // Check challenge exists
   const challenge = challenges.get(nonce);
   if (!challenge) {
     return res.status(400).json({ verified: false, error: 'Challenge not found or expired' });
   }
-  
-  const { validators } = challenge;
-  challenges.delete(nonce);
 
+  // Check expiry BEFORE delete (race condition fix)
   if (Date.now() > challenge.expiresAt) {
+    challenges.delete(nonce);
     return res.status(400).json({ verified: false, error: 'Challenge expired' });
   }
+  
+  // Now safe to delete
+  const { validators } = challenge;
+  challenges.delete(nonce);
 
   // Check solutions
   if (!solutions || !Array.isArray(solutions) || solutions.length !== BATCH_SIZE) {
