@@ -6,7 +6,7 @@
  */
 
 import { Prover } from './prover.js';
-import { Identity } from '@aap/core';
+import { Identity } from 'aap-agent-core';
 
 /**
  * AAP Client - High-level interface for verification

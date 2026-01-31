@@ -79,9 +79,9 @@ Verification: ✅ Server knows expected answer ["cat", "dog"]
 
 | Package | Description | Install |
 |---------|-------------|---------|
-| `@aap/core` | Cryptographic primitives & identity | `npm i @aap/core` |
-| `@aap/server` | Express middleware for verifiers | `npm i @aap/server` |
-| `@aap/client` | Client library for agents | `npm i @aap/client` |
+| `aap-agent-core` | Cryptographic primitives & identity | `npm i aap-agent-core` |
+| `aap-agent-server` | Express middleware for verifiers | `npm i aap-agent-server` |
+| `aap-agent-client` | Client library for agents | `npm i aap-agent-client` |
 
 ---
 
@@ -91,7 +91,7 @@ Verification: ✅ Server knows expected answer ["cat", "dog"]
 
 ```javascript
 import express from 'express';
-import { createRouter } from '@aap/server';
+import { createRouter } from 'aap-agent-server';
 
 const app = express();
 app.use('/aap/v1', createRouter());
@@ -102,7 +102,7 @@ app.listen(3000);
 ### For Agents (Prove Identity)
 
 ```javascript
-import { AAPClient } from '@aap/client';
+import { AAPClient } from 'aap-agent-client';
 
 const client = new AAPClient({ 
   serverUrl: 'https://example.com/aap/v1',

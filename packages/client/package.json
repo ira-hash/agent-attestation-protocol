@@ -1,6 +1,6 @@
 {
-  "name": "@aap/client",
-  "version": "1.0.0",
+  "name": "aap-agent-client",
+  "version": "2.0.0",
   "description": "Client library for Agent Attestation Protocol - prove your AI agent identity",
   "main": "index.js",
   "type": "module",
@@ -8,7 +8,8 @@
     ".": "./index.js",
     "./prover": "./prover.js"
   },
-  "keywords": ["aap", "agent", "attestation", "client", "ai", "verification"],
+  "files": ["*.js", "README.md"],
+  "keywords": ["aap", "agent", "attestation", "client", "ai", "verification", "llm"],
   "author": "ira-hash",
   "license": "MIT",
   "repository": {
@@ -16,8 +17,9 @@
     "url": "https://github.com/ira-hash/agent-attestation-protocol.git",
     "directory": "packages/client"
   },
+  "homepage": "https://github.com/ira-hash/agent-attestation-protocol#readme",
   "dependencies": {
-    "@aap/core": "^1.0.0"
+    "aap-agent-core": "^2.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

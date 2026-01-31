@@ -5,7 +5,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { Identity, createProofData } from '@aap/core';
+import { Identity, createProofData } from 'aap-agent-core';
 
 /**
  * Prover class for generating AAP proofs

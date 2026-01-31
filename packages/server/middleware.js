@@ -4,7 +4,7 @@
  * Drop-in middleware for adding AAP verification to Express apps.
  */
 
-import { verify, generateNonce, createProofData } from '@aap/core';
+import { verify, generateNonce, createProofData } from 'aap-agent-core';
 import { 
   generate as generateChallenge, 
   generateBatch,

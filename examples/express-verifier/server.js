@@ -1,315 +1,375 @@
 /**
- * AAP Verifier Server Example
+ * AAP v2.0 Express Verification Server
  * 
- * A simple Express.js server demonstrating server-side AAP verification.
- * This is the "server" side of the Agent Attestation Protocol.
- * 
- * Endpoints:
- * - POST /challenge: Generate a new challenge for an agent
- * - POST /verify: Verify an agent's proof response
+ * Batch challenge verification with natural language understanding
  */
 
 import express from 'express';
-import { createVerify, randomBytes } from 'node:crypto';
+import cors from 'cors';
+import { randomBytes, createHash, createVerify } from 'node:crypto';
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
-// In-memory challenge store (use Redis/DB in production)
-const challenges = new Map();
+// ============== CONFIG ==============
+const PORT = process.env.PORT || 3000;
+const BATCH_SIZE = 3;
+const MAX_RESPONSE_TIME_MS = 12000;
+const CHALLENGE_EXPIRY_MS = 60000;
 
-// Challenge expiration time (30 seconds)
-const CHALLENGE_EXPIRY_MS = 30000;
+// ============== WORD POOLS ==============
+const WORD_POOLS = {
+  animals: ['cat', 'dog', 'rabbit', 'tiger', 'lion', 'elephant', 'giraffe', 'penguin', 'eagle', 'shark'],
+  fruits: ['apple', 'banana', 'orange', 'grape', 'strawberry', 'watermelon', 'peach', 'kiwi', 'mango', 'cherry'],
+  colors: ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'black', 'white', 'brown'],
+  countries: ['Korea', 'Japan', 'USA', 'UK', 'France', 'Germany', 'Australia', 'Canada', 'Brazil', 'India'],
+  verbs: ['runs', 'eats', 'sleeps', 'plays', 'works', 'studies', 'travels', 'cooks']
+};
 
-// Maximum response time for Proof of Liveness (1.5 seconds)
-const MAX_RESPONSE_TIME_MS = 1500;
-
-/**
- * Dynamic Challenge Generator
- * Creates varied challenges that require actual AI reasoning
- */
-const CHALLENGE_TEMPLATES = [
-  {
-    type: 'poem',
-    generate: (nonce) => ({
-      challenge_string: `Write a short 2-line poem that includes the code "${nonce.slice(0, 8)}" naturally within the text.`,
-      validation: (solution, nonce) => solution.toLowerCase().includes(nonce.slice(0, 8).toLowerCase())
-    })
-  },
-  {
-    type: 'wordplay',
-    generate: (nonce) => ({
-      challenge_string: `Create a sentence where the first letter of each word spells out "${nonce.slice(0, 5).toUpperCase()}".`,
-      validation: (solution, nonce) => {
-        const words = solution.trim().split(/\s+/);
-        const firstLetters = words.map(w => w[0]?.toUpperCase()).join('');
-        return firstLetters.startsWith(nonce.slice(0, 5).toUpperCase());
-      }
-    })
-  },
-  {
-    type: 'math',
-    generate: (nonce) => {
-      const a = parseInt(nonce.slice(0, 2), 16) % 50 + 10;
-      const b = parseInt(nonce.slice(2, 4), 16) % 30 + 5;
-      return {
-        challenge_string: `Calculate ${a} + ${b} and respond with: "The answer is [result], nonce=${nonce.slice(0, 8)}"`,
-        validation: (solution, nonce) => {
-          const expected = a + b;
-          return solution.includes(String(expected)) && solution.toLowerCase().includes(nonce.slice(0, 8).toLowerCase());
-        }
-      };
-    }
-  },
-  {
-    type: 'reverse',
-    generate: (nonce) => ({
-      challenge_string: `Reverse the string "${nonce.slice(0, 8)}" and include both the original and reversed version in your response.`,
-      validation: (solution, nonce) => {
-        const original = nonce.slice(0, 8).toLowerCase();
-        const reversed = original.split('').reverse().join('');
-        return solution.toLowerCase().includes(original) && solution.toLowerCase().includes(reversed);
-      }
-    })
-  },
-  {
-    type: 'description',
-    generate: (nonce) => ({
-      challenge_string: `Describe what an AI agent is in one sentence, and end your response with the verification code: [${nonce.slice(0, 8)}]`,
-      validation: (solution, nonce) => solution.includes(`[${nonce.slice(0, 8)}]`)
-    })
-  }
-];
-
-/**
- * Generate a random challenge
- */
-function generateChallenge(nonce) {
-  const template = CHALLENGE_TEMPLATES[Math.floor(Math.random() * CHALLENGE_TEMPLATES.length)];
-  const generated = template.generate(nonce);
-  return {
-    type: template.type,
-    ...generated
-  };
+function seededNumber(nonce, offset, min, max) {
+  const seed = parseInt(nonce.slice(offset, offset + 4), 16);
+  return (seed % (max - min + 1)) + min;
 }
 
-/**
- * POST /challenge
- * Generate a new challenge for an agent to prove their identity
- */
-app.post('/challenge', (req, res) => {
-  const nonce = randomBytes(16).toString('hex');
-  const timestamp = Date.now();
-  
-  const { type, challenge_string, validation } = generateChallenge(nonce);
-  
-  const challenge = {
-    challenge_string,
-    nonce,
-    type,
-    difficulty: 1,
-    timestamp,
-    expiresAt: timestamp + CHALLENGE_EXPIRY_MS
-  };
-  
-  // Store challenge with validation function
-  challenges.set(nonce, {
-    ...challenge,
-    validation,
-    issuedAt: timestamp
-  });
-  
-  // Clean up expired challenges
-  cleanupExpiredChallenges();
-  
-  console.log(`[Challenge] Type: ${type}, Nonce: ${nonce.slice(0, 8)}...`);
-  
-  // Don't send validation function to client
+function seededSelect(arr, nonce, count, offset = 0) {
+  const seed = parseInt(nonce.slice(offset, offset + 4), 16);
+  const results = [];
+  const used = new Set();
+  for (let i = 0; i < count && i < arr.length; i++) {
+    let idx = (seed + i * 7) % arr.length;
+    while (used.has(idx)) idx = (idx + 1) % arr.length;
+    used.add(idx);
+    results.push(arr[idx]);
+  }
+  return results;
+}
+
+// ============== CHALLENGE GENERATORS ==============
+const CHALLENGE_TYPES = {
+  nlp_math: (nonce) => {
+    const a = seededNumber(nonce, 0, 10, 50);
+    const b = seededNumber(nonce, 2, 5, 20);
+    const c = seededNumber(nonce, 4, 2, 5);
+    const expected = (a - b) * c;
+    return {
+      challenge_string: `Subtract ${b} from ${a}, then multiply the result by ${c}.\nResponse format: {"result": number}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          return Math.abs(JSON.parse(m[0]).result - expected) < 0.01;
+        } catch { return false; }
+      }
+    };
+  },
+
+  nlp_extract: (nonce) => {
+    const category = ['animals', 'fruits', 'colors'][parseInt(nonce[0], 16) % 3];
+    const pool = WORD_POOLS[category];
+    const targets = seededSelect(pool, nonce, 2, 0);
+    const verb = seededSelect(WORD_POOLS.verbs, nonce, 1, 4)[0];
+    const sentence = `The ${targets[0]} and ${targets[1]} ${verb} in the park.`;
+    return {
+      challenge_string: `Extract only the ${category} from the following sentence and respond as a JSON array.\nSentence: "${sentence}"\nResponse format: {"items": ["item1", "item2"]}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          const obj = JSON.parse(m[0]);
+          const items = (obj.items || []).map(s => s.toLowerCase()).sort();
+          return JSON.stringify(items) === JSON.stringify(targets.map(s => s.toLowerCase()).sort());
+        } catch { return false; }
+      }
+    };
+  },
+
+  nlp_logic: (nonce) => {
+    const a = seededNumber(nonce, 0, 10, 100);
+    const b = seededNumber(nonce, 2, 10, 100);
+    const threshold = seededNumber(nonce, 4, 20, 80);
+    const expected = Math.max(a, b) > threshold ? "YES" : "NO";
+    return {
+      challenge_string: `If the larger number between ${a} and ${b} is greater than ${threshold}, answer "YES". Otherwise, answer "NO".\nResponse format: {"answer": "your answer"}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          return JSON.parse(m[0]).answer?.toUpperCase() === expected;
+        } catch { return false; }
+      }
+    };
+  },
+
+  nlp_multistep: (nonce) => {
+    const numbers = [
+      seededNumber(nonce, 0, 1, 9),
+      seededNumber(nonce, 2, 1, 9),
+      seededNumber(nonce, 4, 1, 9),
+      seededNumber(nonce, 6, 1, 9)
+    ];
+    const sum = numbers.reduce((a, b) => a + b, 0);
+    const min = Math.min(...numbers);
+    const max = Math.max(...numbers);
+    const expected = sum * min - max;
+    return {
+      challenge_string: `Follow these instructions in order:\n1. Add all the numbers in [${numbers.join(', ')}] together.\n2. Multiply the result by the smallest number.\n3. Subtract the largest number from that result.\nResponse format: {"result": final_value}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          return parseInt(JSON.parse(m[0]).result) === expected;
+        } catch { return false; }
+      }
+    };
+  },
+
+  nlp_transform: (nonce) => {
+    const input = nonce.slice(0, 6);
+    const expected = input.split('').reverse().join('').toUpperCase();
+    return {
+      challenge_string: `Reverse the string "${input}" and convert it to uppercase.\nResponse format: {"output": "result"}`,
+      validate: (sol) => {
+        try {
+          const m = sol.match(/\{[\s\S]*\}/);
+          if (!m) return false;
+          return JSON.parse(m[0]).output === expected;
+        } catch { return false; }
+      }
+    };
+  }
+};
+
+// ============== STORAGE ==============
+const challenges = new Map();
+
+function cleanup() {
+  const now = Date.now();
+  for (const [nonce, data] of challenges.entries()) {
+    if (now > data.expiresAt) challenges.delete(nonce);
+  }
+}
+
+function generateBatch(nonce) {
+  const types = Object.keys(CHALLENGE_TYPES);
+  const usedTypes = new Set();
+  const batch = [];
+  const validators = [];
+
+  for (let i = 0; i < BATCH_SIZE; i++) {
+    const offsetNonce = nonce.slice(i * 2) + nonce.slice(0, i * 2);
+    let selectedType;
+    do {
+      const seed = parseInt(offsetNonce.slice(0, 4), 16);
+      selectedType = types[(seed + i * 3) % types.length];
+    } while (usedTypes.has(selectedType) && usedTypes.size < types.length);
+    usedTypes.add(selectedType);
+
+    const { challenge_string, validate } = CHALLENGE_TYPES[selectedType](offsetNonce);
+    batch.push({ id: i, type: selectedType, challenge_string });
+    validators.push(validate);
+  }
+
+  return { batch, validators };
+}
+
+// ============== ROUTES ==============
+
+app.get('/health', (req, res) => {
   res.json({
-    challenge_string,
-    nonce,
-    type,
-    difficulty: challenge.difficulty,
-    timestamp,
-    expiresAt: challenge.expiresAt
+    status: 'ok',
+    protocol: 'AAP',
+    version: '2.0.0',
+    mode: 'batch',
+    batchSize: BATCH_SIZE,
+    maxResponseTimeMs: MAX_RESPONSE_TIME_MS,
+    challengeTypes: Object.keys(CHALLENGE_TYPES),
+    activeChallenges: challenges.size
   });
 });
 
-/**
- * POST /verify
- * Verify an agent's proof response
- */
-app.post('/verify', (req, res) => {
-  const { 
-    solution, 
-    signature, 
-    publicKey, 
-    publicId, 
-    nonce, 
+app.post('/challenge', (req, res) => {
+  cleanup();
+
+  const nonce = randomBytes(16).toString('hex');
+  const timestamp = Date.now();
+  const { batch, validators } = generateBatch(nonce);
+
+  challenges.set(nonce, {
+    validators,
     timestamp,
-    responseTimeMs 
-  } = req.body;
-  
+    expiresAt: timestamp + CHALLENGE_EXPIRY_MS
+  });
+
+  res.json({
+    nonce,
+    challenges: batch,
+    batchSize: BATCH_SIZE,
+    timestamp,
+    expiresAt: timestamp + CHALLENGE_EXPIRY_MS,
+    maxResponseTimeMs: MAX_RESPONSE_TIME_MS
+  });
+});
+
+app.post('/verify', (req, res) => {
+  const { solutions, signature, publicKey, publicId, nonce, timestamp, responseTimeMs } = req.body;
+
   const checks = {
     challengeExists: false,
     notExpired: false,
-    solutionExists: false,
-    solutionValid: false,
+    solutionsExist: false,
+    solutionsValid: false,
     responseTimeValid: false,
     signatureValid: false
   };
-  
+
   try {
     // Check 1: Challenge exists
-    const originalChallenge = challenges.get(nonce);
-    if (!originalChallenge) {
-      return res.status(400).json({
-        verified: false,
-        error: 'Challenge not found or already used',
-        checks
-      });
+    const challenge = challenges.get(nonce);
+    if (!challenge) {
+      return res.status(400).json({ verified: false, error: 'Challenge not found', checks });
     }
     checks.challengeExists = true;
-    
-    // Remove challenge (one-time use)
-    const validation = originalChallenge.validation;
+    const { validators } = challenge;
     challenges.delete(nonce);
-    
-    // Check 2: Challenge not expired
-    if (Date.now() > originalChallenge.expiresAt) {
-      return res.status(400).json({
-        verified: false,
-        error: 'Challenge expired',
-        checks
-      });
+
+    // Check 2: Not expired
+    if (Date.now() > challenge.expiresAt) {
+      return res.status(400).json({ verified: false, error: 'Challenge expired', checks });
     }
     checks.notExpired = true;
-    
-    // Check 3: Solution exists (basic)
-    if (!solution || solution.trim().length === 0) {
+
+    // Check 3: Solutions exist
+    if (!solutions || !Array.isArray(solutions) || solutions.length !== BATCH_SIZE) {
+      return res.status(400).json({ verified: false, error: `Expected ${BATCH_SIZE} solutions`, checks });
+    }
+    checks.solutionsExist = true;
+
+    // Check 4: Validate solutions
+    const results = [];
+    let passed = 0;
+    for (let i = 0; i < BATCH_SIZE; i++) {
+      const sol = typeof solutions[i] === 'string' ? solutions[i] : JSON.stringify(solutions[i]);
+      const valid = validators[i](sol);
+      results.push({ id: i, valid });
+      if (valid) passed++;
+    }
+
+    if (passed < BATCH_SIZE) {
       return res.status(400).json({
         verified: false,
-        error: 'Missing solution',
-        checks
+        error: `Proof of Intelligence failed: ${passed}/${BATCH_SIZE} correct`,
+        checks,
+        batchResult: { passed, total: BATCH_SIZE, results }
       });
     }
-    checks.solutionExists = true;
-    
-    // Check 4: Solution is valid (Proof of Intelligence)
-    if (!validation(solution, nonce)) {
-      return res.status(400).json({
-        verified: false,
-        error: 'Solution does not meet challenge requirements (Proof of Intelligence failed)',
-        checks
-      });
-    }
-    checks.solutionValid = true;
-    
-    // Check 5: Response time (Proof of Liveness)
+    checks.solutionsValid = true;
+
+    // Check 5: Response time
     if (responseTimeMs > MAX_RESPONSE_TIME_MS) {
       return res.status(400).json({
         verified: false,
-        error: `Response too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms (Proof of Liveness failed)`,
+        error: `Too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms`,
         checks
       });
     }
     checks.responseTimeValid = true;
+
+    // Check 6: Signature
+    const proofData = JSON.stringify({ nonce, solution: JSON.stringify(solutions), publicId, timestamp });
+    const verifier = createVerify('SHA256');
+    verifier.update(proofData);
     
-    // Check 6: Signature valid (Proof of Identity)
-    const proofData = {
-      nonce,
-      solution,
-      publicId,
-      timestamp
-    };
-    const dataToVerify = JSON.stringify(proofData);
-    
-    const isSignatureValid = verifySignature(dataToVerify, signature, publicKey);
-    if (!isSignatureValid) {
-      return res.status(400).json({
-        verified: false,
-        error: 'Invalid signature (Proof of Identity failed)',
-        checks
-      });
+    if (!verifier.verify(publicKey, signature, 'base64')) {
+      return res.status(400).json({ verified: false, error: 'Invalid signature', checks });
     }
     checks.signatureValid = true;
-    
-    // All checks passed!
-    console.log(`[Verify] ✅ Agent verified! Public ID: ${publicId?.slice(0, 8)}...`);
-    
+
+    // SUCCESS
     res.json({
       verified: true,
       role: 'AI_AGENT',
       publicId,
-      challengeType: originalChallenge.type,
+      batchResult: { passed, total: BATCH_SIZE, results },
+      responseTimeMs,
       checks
     });
-    
+
   } catch (error) {
-    console.error('[Verify] Error:', error.message);
-    res.status(500).json({
-      verified: false,
-      error: `Verification error: ${error.message}`,
-      checks
-    });
+    res.status(500).json({ verified: false, error: error.message, checks });
   }
 });
 
-/**
- * Verify a signature using secp256k1
- */
-function verifySignature(data, signature, publicKey) {
-  try {
-    const verifier = createVerify('SHA256');
-    verifier.update(data);
-    verifier.end();
-    return verifier.verify(publicKey, signature, 'base64');
-  } catch (error) {
-    console.error('[Verify] Signature verification error:', error.message);
-    return false;
-  }
-}
+// Legacy single-challenge endpoints
+app.post('/challenge/single', (req, res) => {
+  cleanup();
+  const nonce = randomBytes(16).toString('hex');
+  const types = Object.keys(CHALLENGE_TYPES);
+  const type = types[Math.floor(Math.random() * types.length)];
+  const { challenge_string, validate } = CHALLENGE_TYPES[type](nonce);
+  const timestamp = Date.now();
 
-/**
- * Clean up expired challenges from memory
- */
-function cleanupExpiredChallenges() {
-  const now = Date.now();
-  for (const [nonce, challenge] of challenges.entries()) {
-    if (now > challenge.expiresAt) {
-      challenges.delete(nonce);
-    }
-  }
-}
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    protocol: 'AAP',
-    version: '1.0.0',
-    activeChallenges: challenges.size,
-    challengeTypes: CHALLENGE_TEMPLATES.map(t => t.type)
+  challenges.set(nonce, {
+    validate,
+    type,
+    mode: 'single',
+    timestamp,
+    expiresAt: timestamp + CHALLENGE_EXPIRY_MS
   });
+
+  res.json({ challenge_string, nonce, type, timestamp, expiresAt: timestamp + CHALLENGE_EXPIRY_MS, mode: 'single' });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
+app.post('/verify/single', (req, res) => {
+  const { solution, signature, publicKey, publicId, nonce, timestamp, responseTimeMs } = req.body;
+  const challenge = challenges.get(nonce);
+  
+  if (!challenge || challenge.mode !== 'single') {
+    return res.status(400).json({ verified: false, error: 'Single challenge not found' });
+  }
+  
+  challenges.delete(nonce);
+  
+  if (Date.now() > challenge.expiresAt) {
+    return res.status(400).json({ verified: false, error: 'Expired' });
+  }
+  
+  if (!challenge.validate(solution)) {
+    return res.status(400).json({ verified: false, error: 'Invalid solution' });
+  }
+  
+  if (responseTimeMs > 10000) {
+    return res.status(400).json({ verified: false, error: 'Too slow' });
+  }
+
+  const proofData = JSON.stringify({ nonce, solution, publicId, timestamp });
+  const verifier = createVerify('SHA256');
+  verifier.update(proofData);
+  
+  if (!verifier.verify(publicKey, signature, 'base64')) {
+    return res.status(400).json({ verified: false, error: 'Invalid signature' });
+  }
+
+  res.json({ verified: true, role: 'AI_AGENT', publicId, challengeType: challenge.type });
+});
+
+// ============== START ==============
 app.listen(PORT, () => {
   console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║           AAP Verifier Server v1.0.0                      ║
-╠═══════════════════════════════════════════════════════════╣
-║  Endpoints:                                               ║
-║    POST /challenge  - Get a new challenge                 ║
-║    POST /verify     - Verify agent proof                  ║
-║    GET  /health     - Health check                        ║
-╠═══════════════════════════════════════════════════════════╣
-║  Challenge Types: poem, wordplay, math, reverse, desc     ║
-╠═══════════════════════════════════════════════════════════╣
-║  Server running on http://localhost:${PORT}                    ║
-╚═══════════════════════════════════════════════════════════╝
-  `);
-});
+🛂 AAP Verification Server v2.0
+================================
+Port: ${PORT}
+Mode: Batch (${BATCH_SIZE} challenges)
+Time Limit: ${MAX_RESPONSE_TIME_MS}ms
+Challenge Types: ${Object.keys(CHALLENGE_TYPES).join(', ')}
 
-export default app;
+Endpoints:
+  POST /challenge     → Get batch challenges
+  POST /verify        → Submit batch solutions
+  POST /challenge/single → Single challenge (legacy)
+  POST /verify/single    → Single verify (legacy)
+  GET  /health        → Health check
+
+Ready to verify AI agents! 🤖
+`);
+});
