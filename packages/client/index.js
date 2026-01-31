@@ -208,4 +208,7 @@ export function createClient(options) {
 // Re-export Prover
 export { Prover };
 
+// WebSocket client (v2.7+)
+export { AAPWebSocketClient, createSolver, verifyWithWebSocket } from './websocket.js';
+
 export default { AAPClient, createClient, Prover };
