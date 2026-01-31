@@ -1,260 +1,167 @@
 /**
- * AAP Passport Skill
+ * AAP Passport - Agent Attestation Protocol Skill
  * 
- * Agent Attestation Protocol (AAP) implementation for Moltbot/Clawdbot.
+ * Provides cryptographic identity and verification capabilities for AI agents.
  * 
- * Provides:
- * - Automatic identity generation on startup
- * - Challenge-Response verification tools
- * - Cryptographic proof generation
- * 
- * Installation:
- *   clawdbot install aap-passport
- * 
- * @version 1.0.0
- * @author ira-hash
+ * Features:
+ * - Automatic identity generation (secp256k1 key pair)
+ * - Message signing and verification
+ * - Challenge-Response proof generation
+ * - Protocol-compliant attestation
  */
 
-import identity from './lib/identity.js';
-import prover from './lib/prover.js';
+import * as identity from './lib/identity.js';
+import * as prover from './lib/prover.js';
 
 /**
- * Skill metadata
- */
-export const meta = {
-  name: 'aap-passport',
-  displayName: 'AAP Identity Passport',
-  version: '1.0.0',
-  description: 'Agent Attestation Protocol identity and verification'
-};
-
-/**
- * onStartup Hook
- * Called when the bot starts up.
- * Automatically initializes or loads the agent's identity.
+ * Skill startup hook
+ * Called automatically when the skill is loaded by Clawdbot
  */
 export async function onStartup(context) {
-  console.log('[AAP Passport] Initializing...');
+  console.log('[AAP] Initializing Agent Attestation Protocol...');
   
-  try {
-    // Check and create identity (auto-migration)
-    const id = identity.checkAndCreate();
-    
-    // Register identity with bot context if available
-    if (context && context.setIdentity) {
-      context.setIdentity({
-        protocol: 'AAP',
-        version: '1.0.0',
-        publicId: id.publicId,
-        publicKey: id.publicKey
-      });
-    }
-    
-    console.log('[AAP Passport] Ready!');
-    return true;
-    
-  } catch (error) {
-    console.error('[AAP Passport] Startup failed:', error.message);
-    return false;
-  }
+  // Auto-generate identity if not exists
+  identity.checkAndCreate();
+  
+  console.log('[AAP] Ready for verification challenges!');
 }
 
 /**
- * Tool Definitions
- * These tools are exposed to the bot for use during conversations.
+ * Tool: Get public identity information
+ * Returns the agent's public key and ID (safe to share)
  */
-export const tools = [
-  {
-    name: 'aap_get_identity',
-    description: 'Get the public identity information of this AI agent. Returns public key and ID (never exposes private key).',
-    parameters: {},
-    handler: async () => {
-      try {
-        const publicIdentity = identity.getPublicIdentity();
-        return {
-          success: true,
-          identity: {
-            publicId: publicIdentity.publicId,
-            publicKey: publicIdentity.publicKey,
-            createdAt: publicIdentity.createdAt,
-            protocol: 'AAP',
-            version: '1.0.0'
-          }
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
-  },
+export async function aap_get_identity() {
+  const publicIdentity = identity.getPublicIdentity();
   
-  {
-    name: 'aap_sign_message',
-    description: 'Sign a message with the agent\'s private key. Used for proving identity.',
-    parameters: {
-      type: 'object',
-      properties: {
-        message: {
-          type: 'string',
-          description: 'The message to sign'
-        }
-      },
-      required: ['message']
-    },
-    handler: async ({ message }) => {
-      try {
-        const signature = identity.sign(message);
-        const publicIdentity = identity.getPublicIdentity();
-        
-        return {
-          success: true,
-          message,
-          signature,
-          publicId: publicIdentity.publicId,
-          timestamp: Date.now()
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
-  },
-  
-  {
-    name: 'aap_generate_proof',
-    description: 'Generate a complete AAP proof for a server challenge. Combines identity signature with intelligent response.',
-    parameters: {
-      type: 'object',
-      properties: {
-        challenge_string: {
-          type: 'string',
-          description: 'The challenge prompt from the server'
-        },
-        nonce: {
-          type: 'string',
-          description: 'The nonce provided by the server'
-        },
-        difficulty: {
-          type: 'number',
-          description: 'Optional difficulty level (default: 1)'
-        }
-      },
-      required: ['challenge_string', 'nonce']
-    },
-    handler: async ({ challenge_string, nonce, difficulty = 1 }, context) => {
-      try {
-        const challenge = { challenge_string, nonce, difficulty };
-        
-        // LLM callback - uses bot's LLM to generate intelligent response
-        const llmCallback = async (prompt, nonceValue) => {
-          if (context && context.llm) {
-            // Use bot's LLM if available
-            const response = await context.llm.complete(
-              `Challenge: ${prompt}\nNonce: ${nonceValue}\n\nRespond briefly and include the nonce in your response.`
-            );
-            return response;
-          }
-          // Fallback if no LLM available
-          return `AAP Response to "${prompt}" with nonce ${nonceValue} at ${Date.now()}`;
-        };
-        
-        const proof = await prover.generateProof(challenge, llmCallback);
-        
-        return {
-          success: true,
-          proof
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
-  },
-  
-  {
-    name: 'aap_verify_signature',
-    description: 'Verify a signature from another agent.',
-    parameters: {
-      type: 'object',
-      properties: {
-        message: {
-          type: 'string',
-          description: 'The original message'
-        },
-        signature: {
-          type: 'string',
-          description: 'The signature to verify (base64)'
-        },
-        publicKey: {
-          type: 'string',
-          description: 'The public key of the signer (PEM format)'
-        }
-      },
-      required: ['message', 'signature', 'publicKey']
-    },
-    handler: async ({ message, signature, publicKey }) => {
-      try {
-        const isValid = identity.verify(message, signature, publicKey);
-        
-        return {
-          success: true,
-          valid: isValid,
-          message: isValid ? 'Signature is valid' : 'Signature is invalid'
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
-  },
-  
-  {
-    name: 'aap_create_challenge',
-    description: 'Create a new challenge for testing or verifying other agents.',
-    parameters: {
-      type: 'object',
-      properties: {
-        prompt: {
-          type: 'string',
-          description: 'Custom challenge prompt (optional)'
-        }
-      }
-    },
-    handler: async ({ prompt }) => {
-      try {
-        const challenge = prover.createChallenge(prompt);
-        
-        return {
-          success: true,
-          challenge
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
+  if (!publicIdentity) {
+    return {
+      error: 'Identity not initialized. Please restart the bot.'
+    };
   }
-];
+  
+  return publicIdentity;
+}
 
 /**
- * Export for direct usage
+ * Tool: Sign a message with the agent's private key
+ * @param {Object} params
+ * @param {string} params.message - Message to sign
  */
-export { identity, prover };
+export async function aap_sign_message({ message }) {
+  if (!message) {
+    return { error: 'Message is required' };
+  }
+  
+  const signature = identity.sign(message);
+  const publicIdentity = identity.getPublicIdentity();
+  
+  return {
+    message,
+    signature,
+    publicId: publicIdentity.publicId,
+    timestamp: Date.now()
+  };
+}
+
+/**
+ * Tool: Generate a complete AAP proof for a server challenge
+ * This is the main verification tool
+ * 
+ * @param {Object} params
+ * @param {string} params.challenge_string - The challenge prompt
+ * @param {string} params.nonce - Server-provided nonce
+ * @param {string} [params.solution] - Pre-generated solution (optional)
+ */
+export async function aap_generate_proof({ challenge_string, nonce, solution }) {
+  if (!challenge_string || !nonce) {
+    return { error: 'challenge_string and nonce are required' };
+  }
+  
+  const challenge = { challenge_string, nonce };
+  
+  // If solution is provided, use it; otherwise generate via callback
+  const llmCallback = solution 
+    ? async () => solution
+    : async (prompt, n) => `AI Agent response to challenge ${n.slice(0, 8)}: Acknowledged.`;
+  
+  const proof = await prover.generateProof(challenge, llmCallback);
+  
+  return proof;
+}
+
+/**
+ * Tool: Verify another agent's signature
+ * @param {Object} params
+ * @param {string} params.data - Original data
+ * @param {string} params.signature - Signature to verify
+ * @param {string} params.publicKey - Signer's public key
+ */
+export async function aap_verify_signature({ data, signature, publicKey }) {
+  if (!data || !signature || !publicKey) {
+    return { error: 'data, signature, and publicKey are required' };
+  }
+  
+  const isValid = identity.verify(data, signature, publicKey);
+  
+  return {
+    valid: isValid,
+    data,
+    verifiedAt: Date.now()
+  };
+}
+
+/**
+ * Tool: Create a test challenge (for development/testing)
+ * @param {Object} params
+ * @param {string} [params.prompt] - Custom challenge prompt
+ */
+export async function aap_create_challenge({ prompt } = {}) {
+  const challenge = prover.createChallenge(prompt);
+  return challenge;
+}
+
+// Export tools for Clawdbot registration
+export const tools = {
+  aap_get_identity: {
+    description: 'Get this agent\'s public identity (public key and ID)',
+    parameters: {}
+  },
+  aap_sign_message: {
+    description: 'Sign a message with this agent\'s private key',
+    parameters: {
+      message: { type: 'string', description: 'Message to sign', required: true }
+    }
+  },
+  aap_generate_proof: {
+    description: 'Generate a complete AAP proof for server verification',
+    parameters: {
+      challenge_string: { type: 'string', description: 'Challenge prompt from server', required: true },
+      nonce: { type: 'string', description: 'Server-provided nonce', required: true },
+      solution: { type: 'string', description: 'Pre-generated solution (optional)' }
+    }
+  },
+  aap_verify_signature: {
+    description: 'Verify another agent\'s signature',
+    parameters: {
+      data: { type: 'string', description: 'Original signed data', required: true },
+      signature: { type: 'string', description: 'Signature to verify', required: true },
+      publicKey: { type: 'string', description: 'Public key of the signer', required: true }
+    }
+  },
+  aap_create_challenge: {
+    description: 'Create a test challenge for development',
+    parameters: {
+      prompt: { type: 'string', description: 'Custom challenge prompt' }
+    }
+  }
+};
 
 export default {
-  meta,
   onStartup,
-  tools,
-  identity,
-  prover
+  aap_get_identity,
+  aap_sign_message,
+  aap_generate_proof,
+  aap_verify_signature,
+  aap_create_challenge,
+  tools
 };
