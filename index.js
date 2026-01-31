@@ -7,11 +7,12 @@
  * - Automatic identity generation (secp256k1 key pair)
  * - Message signing and verification
  * - Challenge-Response proof generation
- * - Protocol-compliant attestation
+ * - Full verification flow with HTTP client
  */
 
 import * as identity from './lib/identity.js';
 import * as prover from './lib/prover.js';
+import * as client from './lib/client.js';
 
 /**
  * Skill startup hook
@@ -70,23 +71,71 @@ export async function aap_sign_message({ message }) {
  * @param {Object} params
  * @param {string} params.challenge_string - The challenge prompt
  * @param {string} params.nonce - Server-provided nonce
- * @param {string} [params.solution] - Pre-generated solution (optional)
+ * @param {string} [params.type] - Challenge type (poem, math, etc.)
+ * @param {string} [params.solution] - Pre-generated solution (optional, for LLM-generated responses)
  */
-export async function aap_generate_proof({ challenge_string, nonce, solution }) {
+export async function aap_generate_proof({ challenge_string, nonce, type, solution }) {
   if (!challenge_string || !nonce) {
     return { error: 'challenge_string and nonce are required' };
   }
   
-  const challenge = { challenge_string, nonce };
+  const challenge = { challenge_string, nonce, type };
   
-  // If solution is provided, use it; otherwise generate via callback
+  // If solution is provided (from LLM), use it directly
   const llmCallback = solution 
     ? async () => solution
-    : async (prompt, n) => `AI Agent response to challenge ${n.slice(0, 8)}: Acknowledged.`;
+    : null; // Use smart fallback
   
   const proof = await prover.generateProof(challenge, llmCallback);
   
   return proof;
+}
+
+/**
+ * Tool: Perform full verification against a server
+ * This handles the complete flow: get challenge -> generate proof -> verify
+ * 
+ * @param {Object} params
+ * @param {string} params.server_url - URL of the verification server
+ * @param {string} [params.solution] - Optional pre-generated solution from LLM
+ */
+export async function aap_verify({ server_url, solution }) {
+  if (!server_url) {
+    return { error: 'server_url is required' };
+  }
+  
+  try {
+    // If solution is provided, create a callback that returns it
+    const llmCallback = solution 
+      ? async (challenge, nonce, type) => solution
+      : null;
+    
+    const result = await client.verify(server_url, llmCallback);
+    return result;
+  } catch (error) {
+    return { 
+      error: `Verification failed: ${error.message}`,
+      verified: false
+    };
+  }
+}
+
+/**
+ * Tool: Check if a verification server is healthy
+ * @param {Object} params
+ * @param {string} params.server_url - URL of the verification server
+ */
+export async function aap_check_server({ server_url }) {
+  if (!server_url) {
+    return { error: 'server_url is required' };
+  }
+  
+  try {
+    const health = await client.checkHealth(server_url);
+    return health;
+  } catch (error) {
+    return { healthy: false, error: error.message };
+  }
 }
 
 /**
@@ -137,7 +186,21 @@ export const tools = {
     parameters: {
       challenge_string: { type: 'string', description: 'Challenge prompt from server', required: true },
       nonce: { type: 'string', description: 'Server-provided nonce', required: true },
-      solution: { type: 'string', description: 'Pre-generated solution (optional)' }
+      type: { type: 'string', description: 'Challenge type (poem, math, wordplay, reverse, description)' },
+      solution: { type: 'string', description: 'Pre-generated solution from LLM (optional)' }
+    }
+  },
+  aap_verify: {
+    description: 'Perform full AAP verification against a server (get challenge -> prove -> verify)',
+    parameters: {
+      server_url: { type: 'string', description: 'URL of the verification server', required: true },
+      solution: { type: 'string', description: 'Optional pre-generated solution from LLM' }
+    }
+  },
+  aap_check_server: {
+    description: 'Check if an AAP verification server is healthy and running',
+    parameters: {
+      server_url: { type: 'string', description: 'URL of the verification server', required: true }
     }
   },
   aap_verify_signature: {
@@ -161,6 +224,8 @@ export default {
   aap_get_identity,
   aap_sign_message,
   aap_generate_proof,
+  aap_verify,
+  aap_check_server,
   aap_verify_signature,
   aap_create_challenge,
   tools
