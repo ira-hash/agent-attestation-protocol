@@ -1,10 +1,10 @@
-# 🛂 AAP Passport
+# 🛂 AAP - Agent Attestation Protocol
 
-[![version](https://img.shields.io/badge/🚀_version-1.0.0-blue.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
+[![version](https://img.shields.io/badge/🚀_version-2.0.0-blue.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![updated](https://img.shields.io/badge/📅_updated-2026--01--31-brightgreen.svg?style=for-the-badge)](https://github.com/ira-hash/agent-attestation-protocol)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](./LICENSE)
 
-[![ClawdHub](https://img.shields.io/badge/ClawdHub-v1.0.0-purple.svg)](https://clawdhub.com/skills/aap-passport)
+[![ClawdHub](https://img.shields.io/badge/ClawdHub-v2.0.0-purple.svg)](https://clawdhub.com/skills/aap-passport)
 [![crypto](https://img.shields.io/badge/crypto-secp256k1-orange.svg)](https://en.bitcoin.it/wiki/Secp256k1)
 [![clawdbot](https://img.shields.io/badge/clawdbot-compatible-blueviolet.svg)](https://github.com/clawdbot/clawdbot)
 
@@ -16,9 +16,9 @@
 
 **Cryptographic identity verification for AI agents**
 
-*Prove your AI agent's identity with PKI signatures, intelligent responses, and machine-speed timing.*
+*Prove your AI agent's identity with PKI signatures, natural language understanding, and machine-speed responses.*
 
-📦 **Latest:** v1.0.0 | 📅 **Updated:** January 31, 2026 | 🔧 **ClawdHub Ready**
+📦 **Latest:** v2.0.0 | 📅 **Updated:** January 31, 2026 | 🔧 **ClawdHub Ready**
 
 </div>
 
@@ -33,8 +33,45 @@
 | Proof | Description | How It Works |
 |-------|-------------|--------------|
 | 🔐 **Proof of Identity** | PKI-based digital signature | Agent signs responses with secp256k1 private key |
-| 🧠 **Proof of Intelligence** | LLM reasoning response | Agent generates intelligent response to challenge |
-| ⚡ **Proof of Liveness** | Machine-speed response | Response must arrive within 1.5 seconds |
+| 🧠 **Proof of Intelligence** | Natural language understanding | Agent solves challenges that require LLM comprehension |
+| ⚡ **Proof of Liveness** | Machine-speed response | Response must arrive within 10 seconds |
+
+---
+
+## 🆕 What's New in v2.0
+
+### Deterministic Instruction Following
+
+v2.0 completely redesigns challenges to require **true AI understanding** while remaining **objectively verifiable**.
+
+| v1.0 (Old) | v2.0 (New) |
+|------------|------------|
+| `Calculate (30+5)*2` | `"30에 5를 더하고, 그 결과를 2로 나눈 값을 구하세요"` |
+| Regex can parse numbers | LLM must understand natural language |
+| Simple code can solve | Requires language comprehension |
+
+### New Challenge Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `nlp_extract` | Extract entities from sentences | "고양이와 개가 뛴다" → Extract animals |
+| `nlp_math` | Word problems | "30에서 5를 빼고 2로 나눠라" |
+| `nlp_transform` | String manipulation via NL | "Reverse and uppercase this" |
+| `nlp_logic` | Conditional reasoning | "If A > B then YES else NO" |
+| `nlp_count` | Count specific categories | "How many animals?" |
+| `nlp_multistep` | Multi-step instructions | "Add → Multiply → Subtract" |
+| `nlp_pattern` | Sequence recognition | "[2, 4, 6, ?, ?]" |
+| `nlp_analysis` | Text analysis | "Find the longest word" |
+
+### Why This Works
+
+```
+Challenge: "문장에서 동물만 추출해서 JSON으로 답해: 고양이와 개가 공원에서 뛴다"
+
+Regular code: ❌ Can't identify "고양이" and "개" as animals
+LLM: ✅ Understands Korean, extracts animals naturally
+Verification: ✅ Server knows expected answer ["고양이", "개"]
+```
 
 ---
 
@@ -67,7 +104,14 @@ app.listen(3000);
 ```javascript
 import { AAPClient } from '@aap/client';
 
-const client = new AAPClient({ serverUrl: 'https://example.com/aap/v1' });
+const client = new AAPClient({ 
+  serverUrl: 'https://example.com/aap/v1',
+  llmCallback: async (prompt) => {
+    // Your LLM API call here
+    return await yourLLM.complete(prompt);
+  }
+});
+
 const result = await client.verify();
 
 if (result.verified) {
@@ -85,47 +129,6 @@ clawdhub install aap-passport
 git clone https://github.com/ira-hash/agent-attestation-protocol.git
 ```
 
-### Auto Identity Generation
-
-After installation, restart your bot. Identity is auto-generated:
-
-```
-[AAP] Identity not found. Generating new secure key pair...
-[AAP] Identity created! Public ID: 04a1b2c3d4... (Ready to verify)
-```
-
----
-
-## 📁 Project Structure
-
-```
-agent-attestation-protocol/
-├── manifest.json              # Skill metadata
-├── index.js                   # Main entry point
-├── lib/                       # Core libraries
-│   ├── identity.js            #   - Key generation/management
-│   └── prover.js              #   - Challenge-Response handling
-├── README.md                  # English documentation
-├── README.ko.md               # Korean documentation
-├── .gitignore
-└── examples/                  # Server examples
-    └── express-verifier/      #   - Express.js verification server
-        ├── server.js
-        └── package.json
-```
-
----
-
-## 🔧 Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `aap_get_identity` | Get public identity (public key & ID) |
-| `aap_sign_message` | Sign a message with private key |
-| `aap_generate_proof` | Generate complete AAP proof for verification |
-| `aap_verify_signature` | Verify another agent's signature |
-| `aap_create_challenge` | Create test challenge for development |
-
 ---
 
 ## 📊 How Verification Works
@@ -135,19 +138,19 @@ agent-attestation-protocol/
 │                    VERIFICATION FLOW                        │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  ┌──────────┐         Challenge + Nonce         ┌────────┐ │
-│  │  Server  │ ─────────────────────────────────▶│  Bot   │ │
-│  │(Verifier)│                                   │(Prover)│ │
-│  └──────────┘                                   └────────┘ │
+│  ┌──────────┐    Challenge (Natural Language)    ┌────────┐│
+│  │  Server  │ ──────────────────────────────────▶│  Agent ││
+│  │(Verifier)│  "문장에서 동물만 추출해서 JSON으로" │ (LLM)  ││
+│  └──────────┘                                    └────────┘│
 │       │                                              │      │
-│       │      Solution + Signature (< 1.5s)          │      │
+│       │         JSON Answer + Signature (< 10s)     │      │
 │       │◀─────────────────────────────────────────────      │
-│       │                                                     │
+│       │         {"items": ["고양이", "개"]}                 │
 │       ▼                                                     │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │ ✅ Verify Signature (Proof of Identity)              │  │
-│  │ ✅ Check Solution (Proof of Intelligence)            │  │
-│  │ ✅ Check Response Time (Proof of Liveness)           │  │
+│  │ ✅ Check JSON Answer (Proof of Intelligence)         │  │
+│  │ ✅ Check Response Time < 10s (Proof of Liveness)     │  │
 │  └──────────────────────────────────────────────────────┘  │
 │       │                                                     │
 │       ▼                                                     │
@@ -158,84 +161,73 @@ agent-attestation-protocol/
 
 ---
 
-## 🧪 Test Server (Server Side)
+## ⏱️ Timing
 
-Run the example verification server to test the protocol:
+| Actor | Response Time | Can Pass? |
+|-------|---------------|-----------|
+| Human | 30+ seconds | ❌ Too slow |
+| LLM (API) | 3-8 seconds | ✅ Within limit |
+| Simple code | - | ❌ Can't understand NL |
 
-```bash
-# Navigate to server folder
-cd examples/express-verifier
+**Time Limit: 10 seconds** - Fast enough for LLM, too fast for humans
 
-# Install dependencies
-npm install
+---
 
-# Start server
-npm start
-# Server runs on http://localhost:3000
+## 📁 Project Structure
+
 ```
-
-### Server Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/challenge` | POST | Generate new challenge (issue Nonce) |
-| `/verify` | POST | Verify agent proof |
-| `/health` | GET | Health check |
-
-### Example Flow
-
-```bash
-# 1. Request challenge
-curl -X POST http://localhost:3000/challenge
-# Response: { "nonce": "abc123...", "challenge_string": "...", ... }
-
-# 2. Bot generates proof, then submits for verification
-curl -X POST http://localhost:3000/verify \
-  -H "Content-Type: application/json" \
-  -d '{"solution": "...", "signature": "...", "publicKey": "...", "nonce": "abc123..."}'
-# Response: { "verified": true, "role": "AI_AGENT" }
+agent-attestation-protocol/
+├── PROTOCOL.md                # Protocol specification v1.0.0
+├── manifest.json              # Skill metadata
+├── package.json               # Monorepo root
+├── packages/
+│   ├── core/                  # @aap/core - Crypto & identity
+│   ├── server/                # @aap/server - Express middleware
+│   └── client/                # @aap/client - Agent client
+├── lib/                       # Clawdbot skill libraries
+├── examples/
+│   └── express-verifier/      # Example verification server
+├── README.md                  # English documentation
+└── README.ko.md               # Korean documentation
 ```
 
 ---
 
-## 💻 Usage Examples
+## 🔧 Available Tools (Clawdbot Skill)
 
-### Get My Identity
+| Tool | Description |
+|------|-------------|
+| `aap_get_identity` | Get public identity (public key & ID) |
+| `aap_sign_message` | Sign a message with private key |
+| `aap_generate_proof` | Generate complete AAP proof for verification |
+| `aap_verify_signature` | Verify another agent's signature |
 
-```javascript
-const result = await bot.tool('aap_get_identity');
-// {
-//   publicId: "04a1b2c3d4e5f6...",
-//   publicKey: "-----BEGIN PUBLIC KEY-----...",
-//   createdAt: "2026-01-31T12:00:00Z"
-// }
+---
+
+## 🧪 Challenge Examples
+
+### NLP Extract
+```json
+{
+  "challenge": "다음 문장에서 동물 이름만 추출해서 JSON 배열로 답하세요.\n문장: \"호랑이와 토끼이 달린다\"\n응답 형식: {\"items\": [\"항목1\", \"항목2\"]}",
+  "expected": {"items": ["호랑이", "토끼"]}
+}
 ```
 
-### Sign a Message
-
-```javascript
-const result = await bot.tool('aap_sign_message', {
-  message: 'Hello, I am an AI agent!'
-});
-// {
-//   message: "Hello, I am an AI agent!",
-//   signature: "MEUCIQDx...",
-//   publicId: "04a1b2c3d4..."
-// }
+### NLP Math
+```json
+{
+  "challenge": "29에서 12를 빼고, 그 결과에 4를 곱한 값을 구하세요.\n응답 형식: {\"result\": 숫자}",
+  "expected": {"result": 68}
+}
 ```
 
-### Respond to Server Challenge
-
-```javascript
-const result = await bot.tool('aap_generate_proof', {
-  challenge_string: "Write a short poem including this random number",
-  nonce: "a1b2c3d4e5f6..."
-});
-// {
-//   solution: "The wind blows carrying a1b2c3d4...",
-//   signature: "MEUCIQDx...",
-//   responseTimeMs: 342
-// }
+### NLP Logic
+```json
+{
+  "challenge": "19와 88 중 더 큰 수가 42보다 크면 \"YES\", 아니면 \"NO\"라고 답하세요.\n응답 형식: {\"answer\": \"답\"}",
+  "expected": {"answer": "YES"}
+}
 ```
 
 ---
@@ -244,10 +236,11 @@ const result = await bot.tool('aap_generate_proof', {
 
 | Aspect | Implementation |
 |--------|----------------|
-| **Key Storage** | `~/.clawdbot/identity.json` (mode 0600) |
+| **Key Storage** | `~/.aap/identity.json` (mode 0600) |
 | **Algorithm** | secp256k1 (same as Bitcoin/Ethereum) |
 | **Private Key** | Never exposed externally |
-| **Permissions** | Owner read/write only |
+| **Nonce** | Cryptographically random, single-use |
+| **Challenge Expiry** | 60 seconds |
 
 ---
 
@@ -261,6 +254,6 @@ MIT
 
 Made with 🤖 by [ira-hash](https://github.com/ira-hash)
 
-**Protect your AI identity. Verify with AAP.**
+**Prove you're AI. Verify with AAP.**
 
 </div>
