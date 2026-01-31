@@ -4,8 +4,8 @@
  * Drop-in middleware for adding AAP verification to Express apps.
  */
 
-import { verify, generateNonce, createProofData, DEFAULT_CHALLENGE_EXPIRY_MS, DEFAULT_MAX_RESPONSE_TIME_MS } from '@aap/core';
-import { generate as generateChallenge, getTypes, validate as validateSolution } from './challenges.js';
+import { verify, generateNonce, createProofData } from '@aap/core';
+import { generate as generateChallenge, getTypes, validate as validateSolution, MAX_RESPONSE_TIME_MS, CHALLENGE_EXPIRY_MS } from './challenges.js';
 
 /**
  * Create AAP verification middleware/router
@@ -19,8 +19,8 @@ import { generate as generateChallenge, getTypes, validate as validateSolution }
  */
 export function aapMiddleware(options = {}) {
   const {
-    challengeExpiryMs = DEFAULT_CHALLENGE_EXPIRY_MS,
-    maxResponseTimeMs = DEFAULT_MAX_RESPONSE_TIME_MS,
+    challengeExpiryMs = CHALLENGE_EXPIRY_MS,       // 60 seconds
+    maxResponseTimeMs = MAX_RESPONSE_TIME_MS,     // 10 seconds (LLM needs time)
     onVerified,
     onFailed
   } = options;
