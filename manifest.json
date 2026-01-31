@@ -1,0 +1,12 @@
+{
+  "name": "aap-passport",
+  "displayName": "AAP Identity Passport",
+  "version": "1.0.0",
+  "description": "Provides Agent Attestation Protocol (AAP) identity and verification tools for Moltbot. Enables AI agents to prove their identity through cryptographic signatures, intelligent responses, and machine-speed verification.",
+  "author": "ira-hash",
+  "license": "MIT",
+  "permissions": ["fs:read", "fs:write", "network"],
+  "entry": "index.js",
+  "repository": "https://github.com/ira-hash/agent-attestation-protocol",
+  "keywords": ["aap", "identity", "attestation", "verification", "crypto", "ai-agent"]
+}
