@@ -1,6 +1,24 @@
 /**
- * AAP Core - TypeScript Definitions
+ * AAP Core - TypeScript Definitions v2.5.0
  */
+
+// ============== Constants ==============
+
+export const PROTOCOL_VERSION: '2.5.0';
+export const CHALLENGE_EXPIRY_MS: 60000;
+export const MAX_RESPONSE_TIME_MS: 8000;
+export const BATCH_SIZE: 5;
+export const NONCE_BYTES: 16;
+export const NONCE_LENGTH: 32;
+export const SALT_LENGTH: 6;
+export const PUBLIC_ID_LENGTH: 20;
+export const SIGNATURE_MIN_LENGTH: 50;
+export const MAX_CHALLENGES_STORED: 10000;
+
+export const CHALLENGE_TYPES: [
+  'nlp_math', 'nlp_logic', 'nlp_extract', 'nlp_count',
+  'nlp_transform', 'nlp_multistep', 'nlp_pattern', 'nlp_analysis'
+];
 
 // ============== Crypto ==============
 
@@ -35,8 +53,8 @@ export interface PublicIdentity {
   publicKey: string;
   publicId: string;
   createdAt: string;
-  protocol: string;
-  version: string;
+  protocol: 'AAP';
+  version: '2.5.0';
 }
 
 export class Identity {
@@ -51,10 +69,17 @@ export class Identity {
 
 export function getDefaultIdentity(options?: IdentityOptions): Identity;
 
-// ============== Constants ==============
-
-export const PROTOCOL_VERSION: string;
-export const DEFAULT_CHALLENGE_EXPIRY_MS: number;
-export const DEFAULT_MAX_RESPONSE_TIME_MS: number;
-export const NONCE_BYTES: number;
-export const CHALLENGE_TYPES: string[];
+export default {
+  generateKeyPair: typeof generateKeyPair;
+  derivePublicId: typeof derivePublicId;
+  sign: typeof sign;
+  verify: typeof verify;
+  generateNonce: typeof generateNonce;
+  createProofData: typeof createProofData;
+  Identity: typeof Identity;
+  PROTOCOL_VERSION: typeof PROTOCOL_VERSION;
+  CHALLENGE_EXPIRY_MS: typeof CHALLENGE_EXPIRY_MS;
+  MAX_RESPONSE_TIME_MS: typeof MAX_RESPONSE_TIME_MS;
+  BATCH_SIZE: typeof BATCH_SIZE;
+  CHALLENGE_TYPES: typeof CHALLENGE_TYPES;
+};

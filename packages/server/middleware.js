@@ -15,6 +15,8 @@ import {
   MAX_RESPONSE_TIME_MS, 
   CHALLENGE_EXPIRY_MS 
 } from './challenges.js';
+import * as logger from './logger.js';
+import { ErrorCodes, sendError } from './errors.js';
 
 /**
  * Create AAP verification middleware/router
