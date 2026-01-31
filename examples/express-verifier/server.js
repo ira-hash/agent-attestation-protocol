@@ -343,11 +343,15 @@ app.post('/verify', (req, res) => {
     });
   }
 
-  // Check timing
-  if (responseTimeMs > MAX_RESPONSE_TIME_MS) {
+  // Check timing (SERVER-SIDE validation - don't trust client)
+  const serverResponseTime = Date.now() - challenge.timestamp;
+  const effectiveTime = Math.max(responseTimeMs || 0, serverResponseTime);
+  
+  if (effectiveTime > MAX_RESPONSE_TIME_MS) {
     return res.status(400).json({
       verified: false,
-      error: `Too slow: ${responseTimeMs}ms > ${MAX_RESPONSE_TIME_MS}ms`
+      error: `Too slow: ${effectiveTime}ms > ${MAX_RESPONSE_TIME_MS}ms`,
+      timing: { client: responseTimeMs, server: serverResponseTime }
     });
   }
 

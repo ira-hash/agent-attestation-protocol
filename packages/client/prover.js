@@ -47,10 +47,20 @@ export class Prover {
     
     if (llmCallback) {
       // Use LLM to solve all at once (more efficient)
-      const combinedPrompt = this.createBatchPrompt(challenges);
-      const llmResponse = await llmCallback(combinedPrompt);
-      const parsedSolutions = this.parseBatchResponse(llmResponse, challenges.length);
-      solutions.push(...parsedSolutions);
+      try {
+        const combinedPrompt = this.createBatchPrompt(challenges);
+        const llmResponse = await llmCallback(combinedPrompt);
+        const parsedSolutions = this.parseBatchResponse(llmResponse, challenges.length);
+        solutions.push(...parsedSolutions);
+      } catch (error) {
+        console.error('[AAP] LLM callback failed:', error.message);
+        // Fallback to placeholder solutions (will fail verification but won't crash)
+        for (const c of challenges) {
+          const saltMatch = c.challenge_string.match(/\[REQ-([A-Z0-9]+)\]/);
+          const salt = saltMatch ? saltMatch[1] : 'ERROR';
+          solutions.push(JSON.stringify({ salt, error: 'LLM callback failed' }));
+        }
+      }
     } else {
       // Use built-in solvers
       for (const challenge of challenges) {

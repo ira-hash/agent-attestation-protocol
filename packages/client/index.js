@@ -8,6 +8,22 @@
 import { Prover } from './prover.js';
 import { Identity } from 'aap-agent-core';
 
+// Fetch with timeout helper
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /**
  * AAP Client - High-level interface for verification
  */
@@ -47,11 +63,19 @@ export class AAPClient {
 
     const callback = solutionOrCallback || this.llmCallback;
 
-    // Step 1: Request challenge
-    const challengeRes = await fetch(`${baseUrl}/challenge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
+    // Step 1: Request challenge (with timeout)
+    let challengeRes;
+    try {
+      challengeRes = await fetchWithTimeout(`${baseUrl}/challenge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, 10000);
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Challenge request timed out');
+      }
+      throw error;
+    }
 
     if (!challengeRes.ok) {
       throw new Error(`Failed to get challenge: ${challengeRes.status}`);
@@ -62,12 +86,20 @@ export class AAPClient {
     // Step 2: Generate proof
     const proof = await this.prover.generateProof(challenge, callback);
 
-    // Step 3: Submit proof
-    const verifyRes = await fetch(`${baseUrl}/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(proof)
-    });
+    // Step 3: Submit proof (with timeout)
+    let verifyRes;
+    try {
+      verifyRes = await fetchWithTimeout(`${baseUrl}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proof)
+      }, 15000);
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Verification request timed out');
+      }
+      throw error;
+    }
 
     const result = await verifyRes.json();
 

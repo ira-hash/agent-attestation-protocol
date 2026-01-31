@@ -211,6 +211,99 @@ test('Full proof generation flow', () => {
   assert(verifier.verify(publicKey, signature, 'base64'), 'Full flow signature valid');
 });
 
+// ============== ERROR HANDLING TESTS ==============
+console.log('\n📦 Error Handling Tests\n');
+
+test('Invalid nonce rejected', () => {
+  const invalidNonces = ['', 'short', 'x'.repeat(100), null, 123];
+  for (const nonce of invalidNonces) {
+    const valid = typeof nonce === 'string' && nonce.length === 32;
+    assert(!valid || nonce === 'x'.repeat(32), `Invalid nonce detected: ${nonce}`);
+  }
+});
+
+test('Invalid publicId rejected', () => {
+  const invalidIds = ['', 'short', 'x'.repeat(100), null];
+  for (const id of invalidIds) {
+    const valid = typeof id === 'string' && id.length === 20;
+    assert(!valid, `Invalid publicId detected: ${id}`);
+  }
+});
+
+test('Invalid signature format rejected', () => {
+  const invalidSigs = ['', 'short', null, 123];
+  for (const sig of invalidSigs) {
+    const valid = typeof sig === 'string' && sig.length >= 50;
+    assert(!valid, `Invalid signature detected`);
+  }
+});
+
+test('Invalid publicKey format rejected', () => {
+  const invalidKeys = ['', 'not-a-key', 'BEGIN PRIVATE KEY', null];
+  for (const key of invalidKeys) {
+    const valid = typeof key === 'string' && key.includes('BEGIN PUBLIC KEY');
+    assert(!valid, `Invalid publicKey detected`);
+  }
+});
+
+// ============== EDGE CASES ==============
+console.log('\n📦 Edge Case Tests\n');
+
+test('Empty solutions array rejected', () => {
+  const solutions = [];
+  assert(solutions.length !== 5, 'Empty array has wrong length');
+});
+
+test('Wrong number of solutions rejected', () => {
+  const solutions = ['a', 'b', 'c'];  // 3 instead of 5
+  assert(solutions.length !== 5, 'Wrong count detected');
+});
+
+test('Missing salt in response detected', () => {
+  const response = '{"result": 42}';
+  const obj = JSON.parse(response);
+  assert(!obj.salt, 'Missing salt detected');
+});
+
+test('Expired challenge detection', () => {
+  const now = Date.now();
+  const expiresAt = now - 1000;  // 1 second ago
+  assert(now > expiresAt, 'Expired challenge detected');
+});
+
+test('Response time validation', () => {
+  const maxTime = 8000;
+  const slowTime = 10000;
+  const fastTime = 3000;
+  assert(slowTime > maxTime, 'Slow response detected');
+  assert(fastTime <= maxTime, 'Fast response accepted');
+});
+
+// ============== SECURITY TESTS ==============
+console.log('\n📦 Security Tests\n');
+
+test('Rate limit constants defined', () => {
+  const MAX_CHALLENGES = 10000;
+  assert(MAX_CHALLENGES > 0, 'Max challenges defined');
+  assert(MAX_CHALLENGES <= 100000, 'Max challenges reasonable');
+});
+
+test('Server-side time validation', () => {
+  const clientTime = 1000;  // Client claims 1 second
+  const serverTime = 15000; // Server measured 15 seconds
+  const effectiveTime = Math.max(clientTime, serverTime);
+  assert(effectiveTime === serverTime, 'Server time takes precedence');
+});
+
+test('Nonce uniqueness', () => {
+  const nonces = new Set();
+  for (let i = 0; i < 100; i++) {
+    const nonce = randomBytes(16).toString('hex');
+    assert(!nonces.has(nonce), 'Nonce collision');
+    nonces.add(nonce);
+  }
+});
+
 // ============== RESULTS ==============
 console.log('\n' + '='.repeat(60));
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);

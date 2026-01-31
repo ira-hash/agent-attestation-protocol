@@ -216,13 +216,17 @@ export function aapMiddleware(options = {}) {
         }
         checks.solutionsValid = true;
 
-        // Check 5: Response time (Proof of Liveness)
-        if (responseTimeMs > maxResponseTimeMs) {
+        // Check 5: Response time (Proof of Liveness) - SERVER-SIDE validation
+        const serverResponseTime = Date.now() - challenge.timestamp;
+        const effectiveResponseTime = Math.max(responseTimeMs, serverResponseTime);
+        
+        if (effectiveResponseTime > maxResponseTimeMs) {
           if (onFailed) onFailed({ error: 'Response too slow', checks }, req);
           return res.status(400).json({
             verified: false,
-            error: `Response too slow: ${responseTimeMs}ms > ${maxResponseTimeMs}ms (Proof of Liveness failed)`,
-            checks
+            error: `Response too slow: ${effectiveResponseTime}ms > ${maxResponseTimeMs}ms (Proof of Liveness failed)`,
+            checks,
+            timing: { client: responseTimeMs, server: serverResponseTime }
           });
         }
         checks.responseTimeValid = true;
