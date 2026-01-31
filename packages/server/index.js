@@ -24,16 +24,16 @@ export { createStore, createMemoryStore, createFileStore, createRedisStore } fro
 export * as logger from './logger.js';
 
 // Constants
-export const PROTOCOL_VERSION = '3.0.0';
-export const TIME_PER_CHALLENGE_MS = 1200;
+export const PROTOCOL_VERSION = '3.1.0';
+export const TOTAL_TIME_MS = 6000;
 export const CHALLENGE_COUNT = 7;
-export const CONNECTION_TIMEOUT_MS = 15000;
+export const CONNECTION_TIMEOUT_MS = 60000;
 
 import { createAAPWebSocket } from './websocket.js';
 
 export default {
   createAAPWebSocket,
   PROTOCOL_VERSION,
-  TIME_PER_CHALLENGE_MS,
+  TOTAL_TIME_MS,
   CHALLENGE_COUNT
 };

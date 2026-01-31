@@ -1,18 +1,18 @@
 /**
- * AAP WebSocket Server v3.0
+ * AAP WebSocket Server v3.1
  * 
- * Sequential challenge delivery over persistent connection.
- * No preview. Server controls pacing. Humans cannot pass.
+ * Batch challenge delivery over WebSocket.
+ * All 7 challenges at once, 6 seconds total.
  */
 
 import { WebSocketServer } from 'ws';
-import { randomBytes, createHash, createVerify } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 
 // ============== CONSTANTS ==============
-export const PROTOCOL_VERSION = '3.0.0';
+export const PROTOCOL_VERSION = '3.1.0';
 export const CHALLENGE_COUNT = 7;
-export const TIME_PER_CHALLENGE_MS = 1200;
-export const CONNECTION_TIMEOUT_MS = 15000;
+export const TOTAL_TIME_MS = 6000;
+export const CONNECTION_TIMEOUT_MS = 60000;
 
 // ============== CHALLENGE GENERATORS ==============
 const GENERATORS = {
@@ -107,22 +107,13 @@ function generateChallenge(nonce, index) {
   const salt = createHash('sha256').update(nonce + index).digest('hex').slice(0, 6).toUpperCase();
   const seed = parseInt(nonce.slice(index * 2, index * 2 + 8), 16) || (index * 17);
   const { q, v } = GENERATORS[type](salt, seed);
-  return { type, challenge: q, validate: v };
+  return { id: index, type, challenge: q, validate: v };
 }
 
 // ============== WEBSOCKET SERVER ==============
 
 /**
  * Create AAP WebSocket verification server
- * @param {Object} options
- * @param {number} [options.port] - Port for standalone server
- * @param {Object} [options.server] - Existing HTTP server to attach to
- * @param {string} [options.path='/aap'] - WebSocket path
- * @param {number} [options.challengeCount=7] - Number of challenges
- * @param {number} [options.timePerChallengeMs=1200] - Time limit per challenge
- * @param {Function} [options.onVerified] - Callback on successful verification
- * @param {Function} [options.onFailed] - Callback on failed verification
- * @returns {Object} { wss, sessions, close }
  */
 export function createAAPWebSocket(options = {}) {
   const {
@@ -130,7 +121,7 @@ export function createAAPWebSocket(options = {}) {
     server,
     path = '/aap',
     challengeCount = CHALLENGE_COUNT,
-    timePerChallengeMs = TIME_PER_CHALLENGE_MS,
+    totalTimeMs = TOTAL_TIME_MS,
     connectionTimeoutMs = CONNECTION_TIMEOUT_MS,
     onVerified,
     onFailed
@@ -138,38 +129,26 @@ export function createAAPWebSocket(options = {}) {
 
   const wssOptions = server ? { server, path } : { port };
   const wss = new WebSocketServer(wssOptions);
-  const sessions = new Map();
   const verifiedTokens = new Map();
 
   wss.on('connection', (ws) => {
     const sessionId = randomBytes(16).toString('hex');
     const nonce = randomBytes(16).toString('hex');
-    const startTime = Date.now();
-
-    const session = {
-      id: sessionId,
-      ws,
-      nonce,
-      startTime,
-      current: 0,
-      challenges: [],
-      answers: [],
-      timings: [],
-      publicId: null,
-      challengeStart: null,
-      timer: null,
-      connTimer: null
-    };
-
-    sessions.set(sessionId, session);
+    let challenges = [];
+    let validators = [];
+    let challengesSentAt = null;
+    let publicId = null;
+    let answered = false;
 
     // Generate challenges
     for (let i = 0; i < challengeCount; i++) {
-      session.challenges.push(generateChallenge(nonce, i));
+      const ch = generateChallenge(nonce, i);
+      challenges.push({ id: ch.id, type: ch.type, challenge: ch.challenge });
+      validators.push(ch.validate);
     }
 
     // Connection timeout
-    session.connTimer = setTimeout(() => {
+    const connTimer = setTimeout(() => {
       send(ws, { type: 'error', code: 'TIMEOUT', message: 'Connection timeout' });
       ws.close();
     }, connectionTimeoutMs);
@@ -180,9 +159,10 @@ export function createAAPWebSocket(options = {}) {
       sessionId,
       protocol: 'AAP',
       version: PROTOCOL_VERSION,
+      mode: 'batch',
       challengeCount,
-      timePerChallengeMs,
-      message: 'Send {"type":"ready"} to begin verification.'
+      totalTimeMs,
+      message: 'Send {"type":"ready"} to receive challenges.'
     });
 
     ws.on('message', (data) => {
@@ -194,173 +174,102 @@ export function createAAPWebSocket(options = {}) {
         return;
       }
 
-      handleMessage(session, msg, {
-        challengeCount,
-        timePerChallengeMs,
-        onVerified,
-        onFailed,
-        verifiedTokens
-      });
+      if (msg.type === 'ready' && !challengesSentAt) {
+        publicId = msg.publicId || 'anon-' + randomBytes(4).toString('hex');
+        challengesSentAt = Date.now();
+        
+        // Send all challenges at once
+        send(ws, {
+          type: 'challenges',
+          nonce,
+          challenges,
+          totalTimeMs,
+          expiresAt: challengesSentAt + totalTimeMs
+        });
+      }
+      else if (msg.type === 'answers' && challengesSentAt && !answered) {
+        answered = true;
+        clearTimeout(connTimer);
+        
+        const elapsed = Date.now() - challengesSentAt;
+        const answers = msg.answers || [];
+        
+        // Too slow?
+        if (elapsed > totalTimeMs) {
+          const result = {
+            type: 'result',
+            verified: false,
+            message: `Too slow: ${elapsed}ms > ${totalTimeMs}ms`,
+            publicId,
+            responseTimeMs: elapsed
+          };
+          if (onFailed) onFailed(result);
+          send(ws, result);
+          setTimeout(() => ws.close(), 300);
+          return;
+        }
+        
+        // Validate all answers
+        let passed = 0;
+        const results = [];
+        for (let i = 0; i < challengeCount; i++) {
+          const valid = validators[i](answers[i]);
+          if (valid) passed++;
+          results.push({ id: i, valid });
+        }
+        
+        const success = passed === challengeCount;
+        const result = {
+          type: 'result',
+          verified: success,
+          message: success ? 'All challenges passed' : `Failed: ${passed}/${challengeCount}`,
+          publicId,
+          passed,
+          total: challengeCount,
+          results,
+          responseTimeMs: elapsed
+        };
+        
+        if (success) {
+          result.role = 'AI_AGENT';
+          result.sessionToken = randomBytes(32).toString('hex');
+          
+          verifiedTokens.set(result.sessionToken, {
+            publicId,
+            nonce,
+            verifiedAt: Date.now(),
+            expiresAt: Date.now() + 3600000,
+            responseTimeMs: elapsed
+          });
+          
+          if (onVerified) onVerified(result);
+        } else {
+          if (onFailed) onFailed(result);
+        }
+        
+        send(ws, result);
+        setTimeout(() => ws.close(), 300);
+      }
     });
 
-    ws.on('close', () => {
-      cleanup(session);
-      sessions.delete(sessionId);
-    });
-
-    ws.on('error', () => {
-      cleanup(session);
-      sessions.delete(sessionId);
-    });
+    ws.on('close', () => clearTimeout(connTimer));
+    ws.on('error', () => clearTimeout(connTimer));
   });
 
   return {
     wss,
-    sessions,
     verifiedTokens,
     close: () => wss.close(),
-    
-    // Helper to check if token is verified
     isVerified: (token) => {
       const session = verifiedTokens.get(token);
       return session && Date.now() < session.expiresAt;
     },
-    
-    // Get verified session info
     getSession: (token) => verifiedTokens.get(token)
   };
 }
 
 function send(ws, data) {
-  if (ws.readyState === 1) {
-    ws.send(JSON.stringify(data));
-  }
+  if (ws.readyState === 1) ws.send(JSON.stringify(data));
 }
 
-function cleanup(session) {
-  clearTimeout(session.timer);
-  clearTimeout(session.connTimer);
-}
-
-function handleMessage(session, msg, options) {
-  const { ws, current, challenges, answers, timings } = session;
-  const { challengeCount, timePerChallengeMs, onVerified, onFailed, verifiedTokens } = options;
-
-  switch (msg.type) {
-    case 'ready':
-      if (current !== 0) {
-        send(ws, { type: 'error', code: 'ALREADY_STARTED', message: 'Already started' });
-        return;
-      }
-      session.publicId = msg.publicId || 'anon-' + randomBytes(4).toString('hex');
-      sendNextChallenge(session, timePerChallengeMs);
-      break;
-
-    case 'answer':
-      if (session.challengeStart === null) {
-        send(ws, { type: 'error', code: 'NO_CHALLENGE', message: 'No active challenge' });
-        return;
-      }
-
-      clearTimeout(session.timer);
-      const elapsed = Date.now() - session.challengeStart;
-
-      // Too slow?
-      if (elapsed > timePerChallengeMs) {
-        finishSession(session, false, `Too slow on challenge #${current}: ${elapsed}ms > ${timePerChallengeMs}ms`, options);
-        return;
-      }
-
-      // Record answer
-      answers.push(msg.answer);
-      timings.push(elapsed);
-
-      // Validate
-      const valid = challenges[current].validate(msg.answer);
-      send(ws, { type: 'ack', id: current, valid, responseMs: elapsed });
-
-      session.current++;
-
-      // More challenges?
-      if (session.current < challengeCount) {
-        setTimeout(() => sendNextChallenge(session, timePerChallengeMs), 50);
-      } else {
-        // Calculate final result
-        const passed = answers.filter((a, i) => challenges[i].validate(a)).length;
-        const success = passed === challengeCount;
-        finishSession(session, success, success ? 'All challenges passed' : `Failed: ${passed}/${challengeCount}`, options, passed);
-      }
-      break;
-
-    default:
-      send(ws, { type: 'error', code: 'UNKNOWN_TYPE', message: 'Unknown message type' });
-  }
-}
-
-function sendNextChallenge(session, timePerChallengeMs) {
-  const { ws, current, challenges } = session;
-  const challenge = challenges[current];
-
-  session.challengeStart = Date.now();
-
-  send(ws, {
-    type: 'challenge',
-    id: current,
-    total: challenges.length,
-    challenge: challenge.challenge,
-    timeLimit: timePerChallengeMs
-  });
-
-  // Timeout for this challenge
-  session.timer = setTimeout(() => {
-    send(ws, { type: 'timeout', id: current, message: 'Time expired' });
-    finishSession(session, false, `Timeout on challenge #${current}`, {});
-  }, timePerChallengeMs + 100);
-}
-
-function finishSession(session, success, message, options, passed) {
-  const { ws, nonce, publicId, startTime, timings } = session;
-  const { onVerified, onFailed, verifiedTokens } = options;
-
-  cleanup(session);
-
-  const totalTime = Date.now() - startTime;
-  const result = {
-    type: 'result',
-    verified: success,
-    message,
-    nonce,
-    publicId,
-    passed,
-    total: session.challenges.length,
-    timings,
-    totalTimeMs: totalTime,
-    avgResponseMs: timings.length ? Math.round(timings.reduce((a, b) => a + b, 0) / timings.length) : null
-  };
-
-  if (success) {
-    result.role = 'AI_AGENT';
-    result.sessionToken = randomBytes(32).toString('hex');
-    
-    // Store verified session
-    if (verifiedTokens) {
-      verifiedTokens.set(result.sessionToken, {
-        publicId,
-        nonce,
-        verifiedAt: Date.now(),
-        expiresAt: Date.now() + 3600000, // 1 hour
-        totalTimeMs: totalTime,
-        avgResponseMs: result.avgResponseMs
-      });
-    }
-
-    if (onVerified) onVerified(result, session);
-  } else {
-    if (onFailed) onFailed(result, session);
-  }
-
-  send(ws, result);
-  setTimeout(() => ws.close(), 300);
-}
-
-export default { createAAPWebSocket, PROTOCOL_VERSION, CHALLENGE_COUNT, TIME_PER_CHALLENGE_MS };
+export default { createAAPWebSocket, PROTOCOL_VERSION, CHALLENGE_COUNT, TOTAL_TIME_MS };

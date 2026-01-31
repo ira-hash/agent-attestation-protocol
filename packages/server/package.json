@@ -1,6 +1,6 @@
 {
   "name": "aap-agent-server",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "WebSocket server for Agent Attestation Protocol - verify AI agents",
   "main": "index.js",
   "types": "index.d.ts",

@@ -1,13 +1,13 @@
 /**
- * @aap/client v3.0.0
+ * @aap/client v3.1.0
  * 
  * WebSocket client for Agent Attestation Protocol.
- * Connect, solve sequential challenges, prove your intelligence.
+ * Batch mode: receive all challenges, solve, submit.
  */
 
 import WebSocket from 'ws';
 
-export const PROTOCOL_VERSION = '3.0.0';
+export const PROTOCOL_VERSION = '3.1.0';
 
 /**
  * AAP WebSocket Client
@@ -21,7 +21,7 @@ export class AAPClient {
 
   /**
    * Connect and verify
-   * @param {Function} [solver] - async (challengeString, challengeId) => answerObject
+   * @param {Function} [solver] - async (challenges) => answers[]
    * @returns {Promise<Object>} Verification result
    */
   async verify(solver) {
@@ -31,9 +31,7 @@ export class AAPClient {
       const ws = new WebSocket(this.serverUrl);
       let result = null;
 
-      ws.on('open', () => {
-        // Wait for handshake
-      });
+      ws.on('open', () => {});
 
       ws.on('message', async (data) => {
         try {
@@ -41,34 +39,24 @@ export class AAPClient {
 
           switch (msg.type) {
             case 'handshake':
-              // Send ready
               ws.send(JSON.stringify({
                 type: 'ready',
                 publicId: this.publicId
               }));
               break;
 
-            case 'challenge':
+            case 'challenges':
               if (!solve) {
-                // No solver - send empty answer (will fail)
-                ws.send(JSON.stringify({ type: 'answer', answer: {} }));
+                ws.send(JSON.stringify({ type: 'answers', answers: [] }));
                 break;
               }
 
               try {
-                const answer = await solve(msg.challenge, msg.id);
-                ws.send(JSON.stringify({ type: 'answer', answer }));
+                const answers = await solve(msg.challenges);
+                ws.send(JSON.stringify({ type: 'answers', answers }));
               } catch (e) {
-                ws.send(JSON.stringify({ type: 'answer', answer: { error: e.message } }));
+                ws.send(JSON.stringify({ type: 'answers', answers: [] }));
               }
-              break;
-
-            case 'ack':
-              // Challenge acknowledged, waiting for next
-              break;
-
-            case 'timeout':
-              // Too slow
               break;
 
             case 'result':
@@ -87,16 +75,11 @@ export class AAPClient {
       });
 
       ws.on('close', () => {
-        if (result) {
-          resolve(result);
-        } else {
-          reject(new Error('Connection closed without result'));
-        }
+        if (result) resolve(result);
+        else reject(new Error('Connection closed without result'));
       });
 
-      ws.on('error', (err) => {
-        reject(err);
-      });
+      ws.on('error', reject);
     });
   }
 }
@@ -104,41 +87,31 @@ export class AAPClient {
 /**
  * Create a solver function from an LLM callback
  * @param {Function} llm - async (prompt) => responseString
- * @returns {Function} Solver function for verify()
+ * @returns {Function} Solver function
  */
 export function createSolver(llm) {
-  return async (challengeString, challengeId) => {
-    const prompt = `Solve this challenge. Respond with ONLY the JSON object, no explanation:
+  return async (challenges) => {
+    const prompt = `Solve ALL these challenges. Return a JSON array of answers in order.
 
-${challengeString}`;
+${challenges.map((c, i) => `[${i}] ${c.challenge}`).join('\n\n')}
+
+Respond with ONLY a JSON array like: [{...}, {...}, ...]`;
 
     const response = await llm(prompt);
-    
-    // Extract JSON from response
-    const match = response.match(/\{[\s\S]*?\}/);
-    if (!match) {
-      throw new Error('No JSON found in response');
-    }
-    
+    const match = response.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error('No JSON array found');
     return JSON.parse(match[0]);
   };
 }
 
 /**
  * Quick verify helper
- * @param {string} serverUrl - WebSocket URL
- * @param {Function} [solver] - Solver function
- * @param {string} [publicId] - Public ID
- * @returns {Promise<Object>} Verification result
  */
 export async function verify(serverUrl, solver, publicId) {
   const client = new AAPClient({ serverUrl, solver, publicId });
   return client.verify();
 }
 
-/**
- * Create client instance
- */
 export function createClient(options) {
   return new AAPClient(options);
 }
