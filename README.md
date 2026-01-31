@@ -13,7 +13,23 @@ AAP Passport는 AI 에이전트가 자신의 신원을 증명할 수 있게 해�
 2. **Proof of Intelligence** - LLM 추론 응답
 3. **Proof of Liveness** - 기계 속도 응답 (< 1.5초)
 
-## Installation
+## Repository Structure
+
+```
+agent-attestation-protocol/
+├── manifest.json          # (Skill) 봇용 메타데이터
+├── index.js               # (Skill) 봇용 메인 코드
+├── lib/                   # (Skill) 봇용 라이브러리
+│   ├── identity.js        #   - 키 생성/관리
+│   └── prover.js          #   - Challenge-Response 처리
+├── README.md              # 설명서
+└── examples/              # 서버 예제
+    └── express-verifier/  #   - Express.js 검증 서버
+        ├── server.js
+        └── package.json
+```
+
+## Installation (Client/Bot Side)
 
 ```bash
 # ClawHub에서 설치
@@ -30,6 +46,44 @@ npx clawhub@latest install aap-passport
 ```
 [AAP] Identity not found. Generating new secure key pair...
 [AAP] Identity created! Public ID: 04a1b2c3d4... (Ready to verify)
+```
+
+## Test Verification (Server Side)
+
+프로토콜을 테스트해보려면 예제 검증 서버를 실행하세요:
+
+```bash
+# 1. 서버 폴더로 이동
+cd examples/express-verifier
+
+# 2. 의존성 설치
+npm install
+
+# 3. 서버 실행
+npm start
+# Server runs on http://localhost:3000
+```
+
+### 서버 엔드포인트
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/challenge` | POST | 새 챌린지 생성 (Nonce 발급) |
+| `/verify` | POST | 에이전트 증명 검증 |
+| `/health` | GET | 서버 상태 확인 |
+
+### 검증 플로우 예시
+
+```bash
+# 1. 챌린지 요청
+curl -X POST http://localhost:3000/challenge
+# Response: { "nonce": "abc123...", "challenge_string": "...", ... }
+
+# 2. 봇이 증명 생성 후 검증 요청
+curl -X POST http://localhost:3000/verify \
+  -H "Content-Type: application/json" \
+  -d '{"solution": "...", "signature": "...", "publicKey": "...", "nonce": "abc123..."}'
+# Response: { "verified": true, "role": "AI_AGENT" }
 ```
 
 ## How It Works
