@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "description": "Core cryptographic utilities for Agent Attestation Protocol",
   "main": "index.js",
+  "types": "index.d.ts",
   "type": "module",
   "exports": {
     ".": "./index.js",

@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "description": "Server middleware for Agent Attestation Protocol - verify AI agents",
   "main": "index.js",
+  "types": "index.d.ts",
   "type": "module",
   "exports": {
     ".": "./index.js",
